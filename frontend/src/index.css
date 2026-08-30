@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-surface-950 text-slate-200 antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-surface-950;
+  }
+}
+
+@layer utilities {
+  /* Deep teal backdrop with a green glow bloom from the top. */
+  .app-backdrop {
+    background-color: #050f0b;
+    background-image:
+      radial-gradient(
+        70% 55% at 50% -5%,
+        rgba(47, 227, 162, 0.16) 0%,
+        rgba(5, 15, 11, 0) 65%
+      ),
+      radial-gradient(
+        90% 60% at 50% 110%,
+        rgba(47, 227, 162, 0.08) 0%,
+        rgba(5, 15, 11, 0) 60%
+      );
+  }
+
+  /* Soft green outer glow for primary surfaces / buttons. */
+  .glow-accent {
+    box-shadow:
+      0 0 0 1px rgba(47, 227, 162, 0.25),
+      0 8px 40px -8px rgba(47, 227, 162, 0.45);
+  }
+  .text-glow {
+    text-shadow: 0 0 24px rgba(47, 227, 162, 0.55);
+  }
+  .text-glow-spoof {
+    text-shadow: 0 0 24px rgba(255, 91, 110, 0.5);
+  }
+}
+
+/* Respect users who prefer less motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
