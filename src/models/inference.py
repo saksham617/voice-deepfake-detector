@@ -50,6 +50,17 @@ def _get_model() -> tuple[SpoofCNN, torch.device]:
     return _cached_model, _cached_device
 
 
+def ensure_model_loaded() -> torch.device:
+    """Eagerly load (and cache) the model -- e.g. at application startup.
+
+    Raises if the checkpoint is missing/corrupt, so a caller (like a FastAPI
+    startup hook) can treat that as a readiness failure. Subsequent
+    predict_audio() calls reuse this same cached model.
+    """
+    _, device = _get_model()
+    return device
+
+
 def preprocess(path: str) -> torch.Tensor:
     """Convert one audio file into the (1, 1, n_mels, n_frames) tensor the CNN expects."""
     spectrogram = extract_log_mel_spectrogram(path)  # (n_mels, n_frames)

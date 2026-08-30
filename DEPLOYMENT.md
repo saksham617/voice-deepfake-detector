@@ -29,7 +29,10 @@ committed to git as a deliberate, narrow exception to the usual
 plain `git clone` + `docker build` has everything it needs -- no external
 storage or download step required.
 
-Health check: `GET /health` -> `{"status": "ok"}`.
+Health check: `GET /health` -> `200 {"status": "ok", "model_ready": true}` if the
+CNN checkpoint loaded successfully at startup, or `503 {"status": "error", "model_ready": false}`
+if it didn't -- so a load balancer/host correctly treats a failed model load
+as unhealthy rather than routing traffic to a broken instance.
 
 ## Frontend (static build)
 
