@@ -1,0 +1,5 @@
+# Voice Deepfake Detector - Python dependencies
+#
+# This file is intentionally empty for now. We will add dependencies here
+# incrementally as the project develops (e.g. audio processing, ML
+# frameworks, FastAPI, etc.) instead of installing everything up front.
