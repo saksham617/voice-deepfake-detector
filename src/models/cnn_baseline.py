@@ -203,23 +203,37 @@ def train_one_epoch(
 
 
 @torch.no_grad()
-def predict_all(
+def predict_proba_all(
     model: nn.Module, loader: DataLoader, device: torch.device, progress_every: int = 0
 ) -> np.ndarray:
-    """Run the model over a full DataLoader and return predicted labels.
+    """Run the model over a full DataLoader and return softmax class probabilities.
 
-    If progress_every > 0, prints a progress line every that many batches
-    (useful for large evaluation sets); silent by default.
+    Returns an array of shape (n_samples, NUM_CLASSES) (column 0 = bonafide,
+    column 1 = spoof). If progress_every > 0, prints a progress line every
+    that many batches (useful for large evaluation sets); silent by default.
     """
     model.eval()
-    predictions = []
+    all_probabilities = []
     total_batches = len(loader)
     for i, (spectrograms, _) in enumerate(loader, start=1):
         outputs = model(spectrograms.to(device))
-        predictions.append(outputs.argmax(dim=1).cpu().numpy())
+        probabilities = torch.softmax(outputs, dim=1)
+        all_probabilities.append(probabilities.cpu().numpy())
         if progress_every and (i % progress_every == 0 or i == total_batches):
             print(f"  evaluated batch {i}/{total_batches}")
-    return np.concatenate(predictions)
+    return np.concatenate(all_probabilities, axis=0)
+
+
+def predict_all(
+    model: nn.Module, loader: DataLoader, device: torch.device, progress_every: int = 0
+) -> np.ndarray:
+    """Run the model over a full DataLoader and return hard predicted labels.
+
+    Equivalent to argmax(predict_proba_all(...), axis=1); kept as a separate
+    convenience function since most callers only need the hard label.
+    """
+    probabilities = predict_proba_all(model, loader, device, progress_every=progress_every)
+    return probabilities.argmax(axis=1)
 
 
 def run_full_experiment(

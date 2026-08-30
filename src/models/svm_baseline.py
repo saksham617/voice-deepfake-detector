@@ -96,12 +96,25 @@ def build_or_load_feature_matrix(
     return X, y, extraction_seconds
 
 
-def build_svm_pipeline() -> Pipeline:
-    """Build a feature-scaling + class-balanced SVM pipeline."""
+def build_svm_pipeline(probability: bool = False) -> Pipeline:
+    """Build a feature-scaling + class-balanced SVM pipeline.
+
+    probability=False (default, unchanged behavior) keeps training fast via
+    plain hinge-loss SVC. Pass probability=True to additionally fit Platt
+    scaling so predict_proba() is available (needed for probability-based
+    ensembling); this costs extra training time and is opt-in.
+    """
     return Pipeline(
         [
             ("scaler", StandardScaler()),
-            ("svm", SVC(class_weight="balanced", random_state=RANDOM_STATE)),
+            (
+                "svm",
+                SVC(
+                    class_weight="balanced",
+                    probability=probability,
+                    random_state=RANDOM_STATE,
+                ),
+            ),
         ]
     )
 
