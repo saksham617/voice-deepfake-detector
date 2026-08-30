@@ -1,0 +1,32 @@
+# Keep the build context small -- the Dockerfile only COPYs specific files
+# it needs, but Docker still has to send the whole context to the daemon
+# first, so excluding the big stuff matters even though it's not directly
+# copied.
+
+.git
+.claude
+
+# Raw dataset (7.4GB) -- never needed at inference time, only training/eval.
+data/raw/
+# Cached MFCC feature matrices and sample previews -- training artifacts,
+# not needed to serve predictions. (data/processed/models/ is NOT excluded --
+# that's where the trained checkpoint the Dockerfile COPYs actually lives.)
+data/processed/features/
+data/processed/*.png
+
+# Python environments/caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Frontend is deployed separately as a static build -- not part of this image.
+frontend/node_modules/
+frontend/dist/
+
+# Not needed at runtime.
+notebooks/
+tests/
+README.md

@@ -28,10 +28,15 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from src.data.asvspoof_cm_loader import load_dev_protocol, load_train_protocol
 from src.features.spectrogram import FIXED_FRAMES, N_MELS, extract_log_mel_spectrogram
-from src.models.svm_baseline import class_distribution, evaluate_predictions, sample_subset
 
+# NOTE: load_train_protocol/load_dev_protocol (src.data.asvspoof_cm_loader) and
+# sample_subset/class_distribution/evaluate_predictions (src.models.svm_baseline)
+# are intentionally imported locally inside run_smoke_test()/run_full_experiment()
+# below, not at module level. svm_baseline pulls in scikit-learn and the full
+# MFCC/feature-prep training stack; keeping that out of this module's top-level
+# imports lets a deployment that only needs SpoofCNN/get_device/CHECKPOINT_DIR
+# (src.models.inference) skip installing scikit-learn entirely.
 NUM_CLASSES = 2  # 0 = bonafide, 1 = spoof
 RANDOM_STATE = 42
 
@@ -127,6 +132,9 @@ def get_device() -> torch.device:
 
 def run_smoke_test(n_samples: int = 8, batch_size: int = 4) -> None:
     """Build a tiny DataLoader batch and run one forward pass to verify shapes."""
+    from src.data.asvspoof_cm_loader import load_train_protocol
+    from src.models.svm_baseline import sample_subset
+
     subset_df = sample_subset(load_train_protocol(), n_samples)
     print(f"smoke-test subset size: {len(subset_df)}")
     print(f"smoke-test label counts: {subset_df['label'].value_counts().to_dict()}")
@@ -248,6 +256,9 @@ def run_full_experiment(
     available disk space is too limited to persist the full spectrogram set;
     a multi-worker DataLoader parallelizes extraction across CPU cores instead.
     """
+    from src.data.asvspoof_cm_loader import load_dev_protocol, load_train_protocol
+    from src.models.svm_baseline import class_distribution, evaluate_predictions
+
     if num_workers is None:
         num_workers = min(4, os.cpu_count() or 1)
 

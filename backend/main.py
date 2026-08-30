@@ -11,6 +11,7 @@ audio loading, spectrogram preprocessing, or model loading here. Does not
 modify the trained model or the raw dataset.
 """
 
+import os
 import shutil
 import sys
 import tempfile
@@ -31,13 +32,19 @@ from src.models.inference import predict_audio
 # accepts (mp3, ogg, webm, m4a) are not yet supported server-side.
 ALLOWED_EXTENSIONS = {".wav", ".flac"}
 
+# Comma-separated list of allowed origins, e.g. "https://myapp.vercel.app".
+# Defaults to "*" so local dev (Vite on a different port) keeps working
+# unconfigured; set explicitly in production instead of relying on the default.
+_cors_origins_env = os.environ.get("CORS_ORIGINS", "*")
+CORS_ORIGINS = (
+    ["*"] if _cors_origins_env == "*" else [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+)
+
 app = FastAPI(title="Voice Deepfake Detector API")
 
-# Allows the Vite dev server (a different origin/port) to call this API
-# during local development.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
 )
@@ -86,4 +93,7 @@ async def predict(file: UploadFile = File(...)) -> PredictionResponse:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Many hosting platforms (Render, Railway, etc.) inject PORT and require
+    # the app to bind to it.
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

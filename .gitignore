@@ -75,3 +75,10 @@ logs/
 node_modules/
 frontend/build/
 frontend/dist/
+
+# ---- Deployment: trained CNN checkpoint is committed on purpose ----
+# Everything else under data/processed/ and *.pt stays ignored (see above);
+# this is a narrow, explicit exception so a fresh clone/deploy has the model
+# without needing external storage. ~13MB, well under GitHub's limits.
+!data/processed/models/
+!data/processed/models/cnn_baseline.pt

@@ -1,0 +1,21 @@
+# Lean runtime dependencies for the FastAPI inference backend only -- NOT the
+# full training/experimentation stack (excludes scikit-learn, matplotlib,
+# torch's GPU/CUDA extras, etc.), to keep the deployed image small.
+#
+# torch is installed separately (see Dockerfile) from the CPU-only PyTorch
+# index, since the default PyPI wheel for Linux pulls in multi-GB CUDA
+# runtime packages this app never uses (CNN inference here is CPU-only,
+# single file at a time).
+#
+# Versions match the project's main requirements.txt for proven compatibility.
+# Transitive deps (scipy, numba, llvmlite, soxr, pooch, etc., pulled in by
+# librosa) are left unpinned here and resolved normally by pip.
+
+fastapi==0.141.1
+uvicorn==0.52.4
+python-multipart==0.0.32
+pydantic==2.13.5
+librosa==1.0.0
+soundfile==0.14.0
+numpy==2.5.2
+pandas==3.0.5
