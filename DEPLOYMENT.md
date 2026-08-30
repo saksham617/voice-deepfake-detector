@@ -34,7 +34,50 @@ CNN checkpoint loaded successfully at startup, or `503 {"status": "error", "mode
 if it didn't -- so a load balancer/host correctly treats a failed model load
 as unhealthy rather than routing traffic to a broken instance.
 
+### Model artifacts
+
+The project contains three model implementations: CNN, SVM, and Random
+Forest. Only the CNN has a persisted model artifact:
+`data/processed/models/cnn_baseline.pt`. The deployed FastAPI inference
+service uses this CNN checkpoint.
+
+The SVM and Random Forest models are not stored as standalone model files.
+They are retrained on demand from the cached MFCC feature matrices in
+`data/processed/features/*.npz`. This is intentional because training from
+the cached features is fast enough that persistent SVM/RF artifacts are
+unnecessary.
+
 ## Frontend (static build)
+
+This is a monorepo: the only Vite/React project lives under `frontend/`,
+the repo root has no `package.json`. Two ways to deploy:
+
+### Vercel (git-connected)
+
+A root-level `vercel.json` tells Vercel how to build the `frontend/`
+subdirectory regardless of the project's "Root Directory" dashboard setting:
+```json
+{
+  "installCommand": "cd frontend && npm install",
+  "buildCommand": "cd frontend && npm run build",
+  "outputDirectory": "frontend/dist"
+}
+```
+(If the project's Root Directory is instead set to `frontend` in the Vercel
+dashboard, this file is simply not read from there and Vercel's normal
+zero-config Vite detection applies -- either configuration works.)
+
+Vercel builds in its own cloud environment and never sees your local
+`.env`/`.env.production` files (both gitignored, and irrelevant to a
+git-connected build anyway). Set these in the Vercel project's
+**Settings -> Environment Variables** (Production) instead:
+- `VITE_API_BASE_URL` -- the deployed backend's public URL (e.g. the Render URL)
+- `VITE_USE_MOCK` -- `false`
+
+Vite bakes both into the bundle at build time, so they must be set before
+triggering a build, not after.
+
+### Manual build + any static host
 
 ```
 cd frontend
@@ -42,10 +85,8 @@ cp .env.production.example .env.production   # set VITE_API_BASE_URL to your bac
 npm run build
 ```
 
-Deploy the resulting `dist/` folder to any static host (Vercel, Netlify,
-GitHub Pages, S3+CloudFront, or serve it via nginx). Vite bakes
-`VITE_API_BASE_URL`/`VITE_USE_MOCK` into the bundle at build time, so they
-must be set before building, not after.
+Deploy the resulting `dist/` folder to any static host (Netlify, GitHub
+Pages, S3+CloudFront, or serve it via nginx).
 
 ## Local production-style check (no Docker required)
 
