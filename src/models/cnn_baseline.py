@@ -13,9 +13,12 @@ the classifier head flattens to a fixed-size vector and predicts one of two
 classes (bonafide=0, spoof=1).
 """
 
+import os
 import sys
+import time
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
@@ -25,10 +28,16 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from src.data.asvspoof_cm_loader import load_dev_protocol, load_train_protocol
 from src.features.spectrogram import FIXED_FRAMES, N_MELS, extract_log_mel_spectrogram
-from src.models.svm_baseline import sample_subset
+from src.models.svm_baseline import class_distribution, evaluate_predictions, sample_subset
 
 NUM_CLASSES = 2  # 0 = bonafide, 1 = spoof
+RANDOM_STATE = 42
+
+# Checkpoints are dataset-derived artifacts, not source, and are gitignored
+# (data/processed/*) rather than committed.
+CHECKPOINT_DIR = _PROJECT_ROOT / "data" / "processed" / "models"
 
 
 class SpectrogramDataset(Dataset):
@@ -58,6 +67,12 @@ class SpoofCNN(nn.Module):
 
     def __init__(self, n_mels: int = N_MELS, n_frames: int = FIXED_FRAMES):
         super().__init__()
+
+        # Log-Mel values are raw dB magnitudes (roughly -80 to 0), which is too
+        # large/unscaled to feed a randomly-initialized CNN directly -- it makes
+        # activations and gradients blow up. BatchNorm2d on the single input
+        # channel standardizes each batch to zero mean / unit variance first.
+        self.input_norm = nn.BatchNorm2d(num_features=1)
 
         # Each block: Conv2d (learn local patterns) -> ReLU (non-linearity)
         # -> MaxPool2d (halve height/width, keep strongest activations)
@@ -95,6 +110,7 @@ class SpoofCNN(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.input_norm(x)
         x = self.block1(x)
         x = self.block2(x)
         x = self.block3(x)
@@ -111,8 +127,6 @@ def get_device() -> torch.device:
 
 def run_smoke_test(n_samples: int = 8, batch_size: int = 4) -> None:
     """Build a tiny DataLoader batch and run one forward pass to verify shapes."""
-    from src.data.asvspoof_cm_loader import load_train_protocol
-
     subset_df = sample_subset(load_train_protocol(), n_samples)
     print(f"smoke-test subset size: {len(subset_df)}")
     print(f"smoke-test label counts: {subset_df['label'].value_counts().to_dict()}")
@@ -141,5 +155,143 @@ def run_smoke_test(n_samples: int = 8, batch_size: int = 4) -> None:
     print("\nsmoke test passed: forward pass succeeded with expected shapes.")
 
 
+def compute_class_weights(labels: pd.Series) -> torch.Tensor:
+    """Inverse-frequency class weights, matching sklearn's class_weight='balanced'.
+
+    weight_c = n_samples / (n_classes * count_c), so the ~9:1 spoof:bonafide
+    imbalance is compensated for in the loss rather than in the data itself.
+    """
+    counts = np.bincount(labels, minlength=NUM_CLASSES)
+    weights = counts.sum() / (NUM_CLASSES * counts)
+    return torch.tensor(weights, dtype=torch.float32)
+
+
+def make_dataloader(
+    protocol_df: pd.DataFrame, batch_size: int, shuffle: bool, num_workers: int
+) -> DataLoader:
+    dataset = SpectrogramDataset(protocol_df)
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        persistent_workers=num_workers > 0,
+    )
+
+
+def train_one_epoch(
+    model: nn.Module,
+    loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    criterion: nn.Module,
+    device: torch.device,
+) -> float:
+    """Run one training epoch and return the average per-batch loss."""
+    model.train()
+    total_loss = 0.0
+    for spectrograms, labels in loader:
+        spectrograms, labels = spectrograms.to(device), labels.to(device)
+
+        optimizer.zero_grad()
+        outputs = model(spectrograms)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.item()
+    return total_loss / len(loader)
+
+
+@torch.no_grad()
+def predict_all(model: nn.Module, loader: DataLoader, device: torch.device) -> np.ndarray:
+    """Run the model over a full DataLoader and return predicted labels."""
+    model.eval()
+    predictions = []
+    for spectrograms, _ in loader:
+        outputs = model(spectrograms.to(device))
+        predictions.append(outputs.argmax(dim=1).cpu().numpy())
+    return np.concatenate(predictions)
+
+
+def run_full_experiment(
+    epochs: int = 5,
+    batch_size: int = 32,
+    learning_rate: float = 1e-3,
+    num_workers: int | None = None,
+) -> None:
+    """Train and evaluate the CNN baseline on the full ASVspoof 2019 LA train/dev protocols.
+
+    Spectrograms are extracted on the fly (not cached to disk) because the
+    available disk space is too limited to persist the full spectrogram set;
+    a multi-worker DataLoader parallelizes extraction across CPU cores instead.
+    """
+    if num_workers is None:
+        num_workers = min(4, os.cpu_count() or 1)
+
+    torch.manual_seed(RANDOM_STATE)
+
+    train_df = load_train_protocol()
+    dev_df = load_dev_protocol()
+
+    print(f"train protocol entries: {len(train_df)}")
+    print(f"dev protocol entries:   {len(dev_df)}")
+    print(f"train class dist:       {class_distribution(train_df['label'].to_numpy())}")
+    print(f"dev class dist:         {class_distribution(dev_df['label'].to_numpy())}")
+    print("positive class:         spoof (label=1); bonafide=0 is negative")
+
+    device = get_device()
+    print(f"device:                 {device}")
+    print(f"num_workers:            {num_workers}")
+
+    train_loader = make_dataloader(train_df, batch_size, shuffle=True, num_workers=num_workers)
+    dev_loader = make_dataloader(dev_df, batch_size, shuffle=False, num_workers=num_workers)
+
+    model = SpoofCNN().to(device)
+    class_weights = compute_class_weights(train_df["label"].to_numpy()).to(device)
+    print(f"class weights (balanced): {class_weights.tolist()}")
+
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+    print(f"\ntraining for {epochs} epochs...")
+    train_start = time.perf_counter()
+    epoch_losses = []
+    for epoch in range(1, epochs + 1):
+        epoch_start = time.perf_counter()
+        avg_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
+        epoch_losses.append(avg_loss)
+        print(
+            f"  epoch {epoch}/{epochs}: loss={avg_loss:.4f} "
+            f"({time.perf_counter() - epoch_start:.1f}s)"
+        )
+    training_time = time.perf_counter() - train_start
+
+    print("\nevaluating on dev set...")
+    y_pred = predict_all(model, dev_loader, device)
+    y_dev = dev_df["label"].to_numpy()
+    metrics = evaluate_predictions(y_dev, y_pred)
+
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = CHECKPOINT_DIR / "cnn_baseline.pt"
+    torch.save(model.state_dict(), checkpoint_path)
+    print(f"\nsaved model checkpoint to: {checkpoint_path}")
+
+    print(f"\nepochs:             {epochs}")
+    print(f"final train loss:   {epoch_losses[-1]:.4f}")
+    print(f"loss per epoch:     {[round(l, 4) for l in epoch_losses]}")
+    print(f"training time:      {training_time:.1f}s")
+    print(f"train samples:      {len(train_df)}")
+    print(f"dev samples:        {len(dev_df)}")
+    print(f"accuracy:           {metrics['accuracy']:.4f}")
+    print(f"precision:          {metrics['precision']:.4f}")
+    print(f"recall:             {metrics['recall']:.4f}")
+    print(f"f1 score:           {metrics['f1']:.4f}")
+    print("confusion matrix (rows=true, cols=pred, order=[bonafide, spoof]):")
+    print(metrics["confusion_matrix"])
+
+
 if __name__ == "__main__":
-    run_smoke_test()
+    if "--full" in sys.argv:
+        run_full_experiment()
+    else:
+        run_smoke_test()
