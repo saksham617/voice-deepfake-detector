@@ -46,7 +46,9 @@ export function ResultCard({ result, onReset }: ResultCardProps) {
       </span>
 
       <h2
-        className={`mt-5 text-4xl sm:text-5xl font-bold tracking-tight ${accentText}`}
+        className={`mt-5 text-4xl sm:text-5xl font-bold tracking-tight ${accentText} ${
+          isSpoof ? "text-glow-spoof" : "text-glow"
+        }`}
       >
         {label}
       </h2>

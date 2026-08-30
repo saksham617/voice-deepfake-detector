@@ -16,17 +16,42 @@
 }
 
 @layer utilities {
-  /* Subtle grid/radial backdrop for the "security product" feel. */
+  /* Deep teal backdrop with a green glow bloom from the top. */
   .app-backdrop {
-    background-color: #0a0d14;
+    background-color: #050f0b;
     background-image:
       radial-gradient(
-        60% 50% at 50% 0%,
-        rgba(79, 140, 255, 0.12) 0%,
-        rgba(10, 13, 20, 0) 70%
+        70% 55% at 50% -5%,
+        rgba(47, 227, 162, 0.16) 0%,
+        rgba(5, 15, 11, 0) 65%
       ),
-      linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-    background-size: 100% 100%, 44px 44px, 44px 44px;
+      radial-gradient(
+        90% 60% at 50% 110%,
+        rgba(47, 227, 162, 0.08) 0%,
+        rgba(5, 15, 11, 0) 60%
+      );
+  }
+
+  /* Soft green outer glow for primary surfaces / buttons. */
+  .glow-accent {
+    box-shadow:
+      0 0 0 1px rgba(47, 227, 162, 0.25),
+      0 8px 40px -8px rgba(47, 227, 162, 0.45);
+  }
+  .text-glow {
+    text-shadow: 0 0 24px rgba(47, 227, 162, 0.55);
+  }
+  .text-glow-spoof {
+    text-shadow: 0 0 24px rgba(255, 91, 110, 0.5);
+  }
+}
+
+/* Respect users who prefer less motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
   }
 }

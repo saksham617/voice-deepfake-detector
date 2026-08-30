@@ -4,21 +4,23 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Neutral "security product" surface palette
+        // Deep teal-green "voice product" surface palette.
         surface: {
-          950: "#0a0d14",
-          900: "#0f131c",
-          800: "#161b26",
-          700: "#1f2633",
-          600: "#2a3342",
-          500: "#3a4556",
+          950: "#050f0b",
+          900: "#081712",
+          800: "#0d211a",
+          700: "#123026",
+          600: "#1a4234",
+          500: "#255747",
         },
+        // Neon-mint accent with glow.
         accent: {
-          DEFAULT: "#4f8cff",
-          hover: "#3d7bf5",
+          DEFAULT: "#2fe3a2",
+          hover: "#25c98b",
+          soft: "#7ef7c8",
         },
-        bonafide: "#22c55e",
-        spoof: "#ef4444",
+        bonafide: "#2fe3a2",
+        spoof: "#ff5b6e",
       },
       fontFamily: {
         sans: [
@@ -30,6 +32,31 @@ export default {
           "sans-serif",
         ],
         mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "monospace"],
+      },
+      keyframes: {
+        flow1: {
+          "0%": { transform: "translateX(0)" },
+          "100%": { transform: "translateX(-800px)" },
+        },
+        flow2: {
+          "0%": { transform: "translateX(-800px)" },
+          "100%": { transform: "translateX(0)" },
+        },
+        glowpulse: {
+          "0%, 100%": { opacity: "0.55" },
+          "50%": { opacity: "1" },
+        },
+        floaty: {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-4px)" },
+        },
+      },
+      animation: {
+        "flow-1": "flow1 11s linear infinite",
+        "flow-2": "flow2 17s linear infinite",
+        "flow-3": "flow1 7s linear infinite",
+        glowpulse: "glowpulse 2.6s ease-in-out infinite",
+        floaty: "floaty 4s ease-in-out infinite",
       },
     },
   },
