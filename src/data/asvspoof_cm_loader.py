@@ -14,9 +14,11 @@ CM_PROTOCOL_DIR = LA_ROOT / "ASVspoof2019_LA_cm_protocols"
 
 TRAIN_PROTOCOL_PATH = CM_PROTOCOL_DIR / "ASVspoof2019.LA.cm.train.trn.txt"
 DEV_PROTOCOL_PATH = CM_PROTOCOL_DIR / "ASVspoof2019.LA.cm.dev.trl.txt"
+EVAL_PROTOCOL_PATH = CM_PROTOCOL_DIR / "ASVspoof2019.LA.cm.eval.trl.txt"
 
 TRAIN_AUDIO_DIR = LA_ROOT / "ASVspoof2019_LA_train" / "flac"
 DEV_AUDIO_DIR = LA_ROOT / "ASVspoof2019_LA_dev" / "flac"
+EVAL_AUDIO_DIR = LA_ROOT / "ASVspoof2019_LA_eval" / "flac"
 
 PROTOCOL_COLUMNS = ["speaker_id", "filename", "unused", "system_id", "key"]
 LABEL_MAP = {"bonafide": 0, "spoof": 1}
@@ -55,6 +57,11 @@ def load_train_protocol() -> pd.DataFrame:
 def load_dev_protocol() -> pd.DataFrame:
     """Load the ASVspoof 2019 LA dev CM protocol as a metadata DataFrame."""
     return _load_cm_protocol(DEV_PROTOCOL_PATH, DEV_AUDIO_DIR)
+
+
+def load_eval_protocol() -> pd.DataFrame:
+    """Load the ASVspoof 2019 LA eval CM protocol as a metadata DataFrame."""
+    return _load_cm_protocol(EVAL_PROTOCOL_PATH, EVAL_AUDIO_DIR)
 
 
 def validate_split(

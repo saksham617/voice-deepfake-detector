@@ -203,13 +203,22 @@ def train_one_epoch(
 
 
 @torch.no_grad()
-def predict_all(model: nn.Module, loader: DataLoader, device: torch.device) -> np.ndarray:
-    """Run the model over a full DataLoader and return predicted labels."""
+def predict_all(
+    model: nn.Module, loader: DataLoader, device: torch.device, progress_every: int = 0
+) -> np.ndarray:
+    """Run the model over a full DataLoader and return predicted labels.
+
+    If progress_every > 0, prints a progress line every that many batches
+    (useful for large evaluation sets); silent by default.
+    """
     model.eval()
     predictions = []
-    for spectrograms, _ in loader:
+    total_batches = len(loader)
+    for i, (spectrograms, _) in enumerate(loader, start=1):
         outputs = model(spectrograms.to(device))
         predictions.append(outputs.argmax(dim=1).cpu().numpy())
+        if progress_every and (i % progress_every == 0 or i == total_batches):
+            print(f"  evaluated batch {i}/{total_batches}")
     return np.concatenate(predictions)
 
 
