@@ -59,11 +59,28 @@ models/*
 # fresh from Hugging Face Hub on first load, never committed.
 pretrained_models/
 
+# Live-call AASIST checkpoint dir: everything ignored except the checkpoint
+# itself, which IS committed on purpose (see the Deployment section below)
+# via Git LFS -- too large (~1.26GB) for a normal git blob.
+backend/models/*
+!backend/models/.gitkeep
+
+# wav2vec2/IndicWav2Vec SSL frontend caches used by the live-call feature
+# extractor (backend/inference/feature_extractor.py) -- fetched fresh, never
+# committed.
+s3prl_hub/
+hf_cache/
+
 # ---- Datasets / audio ----
 data/raw/*
 data/processed/*
+data/generated/*
+data/manifests/*
+data/eval_scores.tsv
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+!data/generated/.gitkeep
+!data/manifests/.gitkeep
 !data/raw/asvspoof2019/
 data/raw/asvspoof2019/*
 !data/raw/asvspoof2019/.gitkeep
@@ -71,6 +88,8 @@ data/raw/asvspoof2019/*
 *.mp3
 *.flac
 *.ogg
+!tests/fixtures/*.wav
+scratch/
 
 # ---- Logs ----
 *.log
@@ -88,11 +107,14 @@ node_modules/
 frontend/build/
 frontend/dist/
 
-# ---- Deployment: trained CNN checkpoint is committed on purpose ----
-# Everything else under data/processed/ and *.pt stays ignored (see above);
-# this is a narrow, explicit exception so a fresh clone/deploy has the model
-# without needing external storage. ~13MB, well under GitHub's limits.
+# ---- Deployment: trained model checkpoints are committed on purpose ----
+# Everything else under data/processed/, backend/models/, and *.pt stays
+# ignored (see above); these are narrow, explicit exceptions so a fresh
+# clone/deploy has both models without needing external storage.
+# cnn_baseline.pt: ~13MB, well under GitHub's limits, committed as a normal blob.
 !data/processed/models/
 !data/processed/models/cnn_baseline.pt
+# aasist_indicw2v.pt: ~1.26GB, tracked via Git LFS (see .gitattributes).
+!backend/models/aasist_indicw2v.pt
 .vercel
 .env*
