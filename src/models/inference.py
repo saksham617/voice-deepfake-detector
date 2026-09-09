@@ -18,6 +18,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from src.data.audio_io import load_audio_resampled
 from src.features.spectrogram import extract_log_mel_spectrogram
 from src.models.cnn_baseline import CHECKPOINT_DIR, SpoofCNN, get_device
 
@@ -62,8 +63,15 @@ def ensure_model_loaded() -> torch.device:
 
 
 def preprocess(path: str) -> torch.Tensor:
-    """Convert one audio file into the (1, 1, n_mels, n_frames) tensor the CNN expects."""
-    spectrogram = extract_log_mel_spectrogram(path)  # (n_mels, n_frames)
+    """Convert one audio file into the (1, 1, n_mels, n_frames) tensor the CNN expects.
+
+    Uses load_audio_resampled (not the dataset's plain load_audio) so
+    arbitrary user uploads that aren't already 16 kHz mono -- unlike every
+    ASVspoof training/dev/eval file -- get converted to match training
+    conditions before feature extraction, instead of silently being treated
+    as if they already conformed.
+    """
+    spectrogram = extract_log_mel_spectrogram(path, loader=load_audio_resampled)  # (n_mels, n_frames)
     return torch.tensor(spectrogram, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
 
 

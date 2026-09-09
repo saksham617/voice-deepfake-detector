@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from typing import Tuple
 
+import librosa
 import numpy as np
 import soundfile as sf
 
@@ -21,10 +22,63 @@ from src.data.asvspoof_cm_loader import load_train_protocol
 EXPECTED_SAMPLE_RATE = 16000
 EXPECTED_CHANNELS = 1
 
+# Every ASVspoof 2019 LA file is peak-normalized to ~1.0 (confirmed across a
+# 50-file random sample of the train protocol: mean/median/min peak all
+# 1.0000), so matching that convention -- not RMS-matching, which varies
+# file to file even within the dataset -- is what makes an external
+# recording's absolute loudness comparable to what the model was trained on.
+# Target is just under full scale to leave headroom against any tiny
+# overshoot from resampling.
+TARGET_PEAK_AMPLITUDE = 0.99
+
+# Silence below this level (relative to the clip's own peak, in dB) is
+# trimmed from the start/end before normalization. Deliberately librosa's
+# own default -- a lower threshold (30) was tried and rejected: on a real
+# ASVspoof bonafide file it trimmed 28% of the clip (0.8s of a 3.46s clip)
+# as "leading silence" when that was actually quiet speech content (soft
+# onset/consonants), flipping a correct bonafide prediction to spoof at
+# 100% confidence. top_db=60 only removes near-total silence: 34ms on that
+# same bonafide file, 192ms of genuine lead-in gap on a real external
+# recording.
+SILENCE_TRIM_TOP_DB = 60
+
 
 def load_audio(path: str) -> Tuple[np.ndarray, int]:
     """Load a single audio file and return (waveform, sample_rate)."""
     waveform, sample_rate = sf.read(path, dtype="float32")
+    return waveform, sample_rate
+
+
+def load_audio_resampled(
+    path: str, target_sr: int = EXPECTED_SAMPLE_RATE
+) -> Tuple[np.ndarray, int]:
+    """Load an audio file, resampling to target_sr and mixing down to mono.
+
+    Inference-time safety net for arbitrary user uploads, which -- unlike
+    the ASVspoof dataset load_audio() assumes -- aren't guaranteed to
+    already be 16 kHz mono. librosa.load(sr=..., mono=True) is a no-op
+    when the source already matches (no resample call, no channel mixing),
+    so this is safe to point at already-conforming files too.
+
+    Also trims leading/trailing silence and peak-normalizes to
+    TARGET_PEAK_AMPLITUDE, matching the loudness/silence characteristics
+    every ASVspoof training file already has -- an external recording (quiet
+    mic gain, room-noise lead-in) otherwise produces a log-mel spectrogram
+    with a substantially different value distribution than anything the
+    model trained on, even after resampling/mono-mixing alone.
+    """
+    waveform, sample_rate = librosa.load(path, sr=target_sr, mono=True)
+
+    trimmed, _ = librosa.effects.trim(waveform, top_db=SILENCE_TRIM_TOP_DB)
+    # A pathological all-silence/all-noise clip can trim to (near-)empty;
+    # fall back to the untrimmed waveform rather than normalize by ~0.
+    if trimmed.size > 0:
+        waveform = trimmed
+
+    peak = np.max(np.abs(waveform))
+    if peak > 0:
+        waveform = waveform * (TARGET_PEAK_AMPLITUDE / peak)
+
     return waveform, sample_rate
 
 
