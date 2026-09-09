@@ -17,7 +17,8 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from backend.main import GENERIC_PREDICTION_ERROR_DETAIL, MAX_UPLOAD_SIZE_BYTES, app
+from backend.api.legacy import GENERIC_PREDICTION_ERROR_DETAIL, MAX_UPLOAD_SIZE_BYTES
+from backend.main import app
 from src.data.asvspoof_cm_loader import load_train_protocol
 
 
