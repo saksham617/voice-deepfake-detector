@@ -45,9 +45,11 @@ scipy==1.18.1
 six==1.17.0
 soundfile==0.14.0
 soxr==1.1.0
+speechbrain==1.1.1
 starlette==1.6.0
 threadpoolctl==3.6.0
 torch==2.13.0
+torchaudio==2.11.0
 typing_extensions==4.16.0
 typing-inspection==0.4.4
 urllib3==2.7.0

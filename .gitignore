@@ -54,6 +54,11 @@ Thumbs.db
 models/*
 !models/.gitkeep
 
+# SpeechBrain's local cache of pretrained model downloads (weights, plus
+# small yaml/txt config files not caught by the patterns above) -- fetched
+# fresh from Hugging Face Hub on first load, never committed.
+pretrained_models/
+
 # ---- Datasets / audio ----
 data/raw/*
 data/processed/*
@@ -71,6 +76,13 @@ data/raw/asvspoof2019/*
 *.log
 logs/
 
+# ---- Local databases ----
+# reports.db (src/models/reporting.py) is per-machine runtime data, not a
+# project asset -- same reasoning as the *.pt model-weight exclusions above.
+*.db
+*.sqlite
+*.sqlite3
+
 # ---- Node / frontend ----
 node_modules/
 frontend/build/
@@ -82,3 +94,5 @@ frontend/dist/
 # without needing external storage. ~13MB, well under GitHub's limits.
 !data/processed/models/
 !data/processed/models/cnn_baseline.pt
+.vercel
+.env*

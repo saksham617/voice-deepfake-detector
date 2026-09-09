@@ -18,7 +18,7 @@ import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -27,6 +27,8 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from src.models import reporting
+from src.models import speaker_verification as sv
 from src.models.inference import ensure_model_loaded, predict_audio
 
 logger = logging.getLogger("backend")
@@ -58,6 +60,11 @@ _UPLOAD_CHUNK_SIZE = 1024 * 1024
 # Exposed as a constant (rather than an inline literal) so tests can assert
 # against it directly instead of duplicating the string.
 GENERIC_PREDICTION_ERROR_DETAIL = "Internal error while processing the audio file."
+GENERIC_SPEAKER_ERROR_DETAIL = "Internal error while processing the speaker verification request."
+GENERIC_REPORT_ERROR_DETAIL = "Internal error while processing the report."
+CORRUPT_AUDIO_ERROR_DETAIL = (
+    "Could not read the uploaded audio file. It may be corrupted or in an unsupported format."
+)
 
 # Comma-separated list of allowed origins, e.g. "https://myapp.vercel.app".
 # Defaults to "*" so local dev (Vite on a different port) keeps working
@@ -79,6 +86,22 @@ async def lifespan(app: FastAPI):
     except Exception:
         app.state.model_ready = False
         logger.exception("model failed to load at startup")
+
+    try:
+        sv.ensure_model_loaded()
+        app.state.speaker_model_ready = True
+        logger.info("speaker verification model loaded successfully")
+    except Exception:
+        app.state.speaker_model_ready = False
+        logger.exception("speaker verification model failed to load at startup")
+
+    try:
+        reporting.ensure_db_ready()
+        app.state.reports_db_ready = True
+        logger.info("reports database ready at %s", reporting.DB_PATH)
+    except Exception:
+        app.state.reports_db_ready = False
+        logger.exception("reports database failed to initialize at startup")
     yield
 
 
@@ -99,14 +122,63 @@ class PredictionResponse(BaseModel):
     spoof_probability: float
 
 
+class EnrollSpeakerResponse(BaseModel):
+    name: str
+    duration_sec: float
+    short_clip: bool
+
+
+class VerifySpeakerResponse(BaseModel):
+    name: str
+    similarity: float
+    is_match: bool
+    threshold: float
+    short_clip: bool
+
+
+class ReportCreateRequest(BaseModel):
+    type: str
+    verdict: str
+    confidence_score: float
+    claimed_identity: str | None = None
+    user_notes: str | None = None
+
+
+class ReportResponse(BaseModel):
+    id: int
+    timestamp: str
+    type: str
+    verdict: str
+    confidence_score: float
+    claimed_identity: str | None = None
+    user_notes: str | None = None
+
+
 @app.get("/health")
 def health() -> JSONResponse:
-    """Reports whether the model actually loaded at startup, not just that
+    """Reports whether the models actually loaded at startup, not just that
     the process is running -- so a load balancer/host treats a failed model
-    load as unhealthy rather than routing traffic to a broken instance."""
+    load as unhealthy rather than routing traffic to a broken instance.
+
+    Overall `status`/status-code tracks the primary spoof-detection model
+    only (the app's core feature); `speaker_model_ready` and
+    `reports_db_ready` are reported separately since the endpoints for those
+    features fail with their own clear errors rather than a confusing 500."""
     model_ready = getattr(app.state, "model_ready", False)
-    payload = {"status": "ok" if model_ready else "error", "model_ready": model_ready}
+    speaker_model_ready = getattr(app.state, "speaker_model_ready", False)
+    reports_db_ready = getattr(app.state, "reports_db_ready", False)
+    payload = {
+        "status": "ok" if model_ready else "error",
+        "model_ready": model_ready,
+        "speaker_model_ready": speaker_model_ready,
+        "reports_db_ready": reports_db_ready,
+    }
     return JSONResponse(content=payload, status_code=200 if model_ready else 503)
+
+
+def _require_speaker_model_ready() -> None:
+    if not getattr(app.state, "speaker_model_ready", False):
+        raise HTTPException(status_code=503, detail="Speaker verification model is not ready.")
 
 
 def _save_upload_to_tempfile(file: UploadFile, suffix: str) -> str:
@@ -168,6 +240,118 @@ def predict(file: UploadFile = File(...)) -> PredictionResponse:
         bonafide_probability=result["bonafide_probability"],
         spoof_probability=result["spoof_probability"],
     )
+
+
+@app.post("/enroll_speaker", response_model=EnrollSpeakerResponse)
+def enroll_speaker(name: str = Form(...), file: UploadFile = File(...)) -> EnrollSpeakerResponse:
+    _require_speaker_model_ready()
+
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{suffix}'. Supported: {sorted(ALLOWED_EXTENSIONS)}",
+        )
+
+    tmp_path = _save_upload_to_tempfile(file, suffix)
+    try:
+        result = sv.enroll_speaker(name, tmp_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except sv.AudioDecodeError:
+        raise HTTPException(status_code=400, detail=CORRUPT_AUDIO_ERROR_DETAIL) from None
+    except Exception:
+        logger.exception("speaker enrollment failed for name=%r file=%r", name, file.filename)
+        raise HTTPException(status_code=500, detail=GENERIC_SPEAKER_ERROR_DETAIL) from None
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+    return EnrollSpeakerResponse(**result)
+
+
+@app.post("/verify_speaker", response_model=VerifySpeakerResponse)
+def verify_speaker(name: str = Form(...), file: UploadFile = File(...)) -> VerifySpeakerResponse:
+    _require_speaker_model_ready()
+
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{suffix}'. Supported: {sorted(ALLOWED_EXTENSIONS)}",
+        )
+
+    tmp_path = _save_upload_to_tempfile(file, suffix)
+    try:
+        result = sv.verify_speaker(name, tmp_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except sv.SpeakerNotEnrolledError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except sv.AudioDecodeError:
+        raise HTTPException(status_code=400, detail=CORRUPT_AUDIO_ERROR_DETAIL) from None
+    except Exception:
+        logger.exception("speaker verification failed for name=%r file=%r", name, file.filename)
+        raise HTTPException(status_code=500, detail=GENERIC_SPEAKER_ERROR_DETAIL) from None
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+    return VerifySpeakerResponse(**result)
+
+
+@app.post("/report", response_model=ReportResponse)
+def create_report(payload: ReportCreateRequest) -> ReportResponse:
+    try:
+        result = reporting.create_report(
+            report_type=payload.type,
+            verdict=payload.verdict,
+            confidence_score=payload.confidence_score,
+            claimed_identity=payload.claimed_identity,
+            user_notes=payload.user_notes,
+        )
+    except reporting.InvalidReportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except Exception:
+        logger.exception("report creation failed for payload=%r", payload)
+        raise HTTPException(status_code=500, detail=GENERIC_REPORT_ERROR_DETAIL) from None
+
+    return ReportResponse(**result)
+
+
+@app.get("/reports", response_model=list[ReportResponse])
+def list_reports() -> list[ReportResponse]:
+    try:
+        results = reporting.list_reports()
+    except Exception:
+        logger.exception("listing reports failed")
+        raise HTTPException(status_code=500, detail=GENERIC_REPORT_ERROR_DETAIL) from None
+
+    return [ReportResponse(**r) for r in results]
+
+
+@app.get("/reports/{report_id}", response_model=ReportResponse)
+def get_report(report_id: int) -> ReportResponse:
+    try:
+        result = reporting.get_report(report_id)
+    except reporting.ReportNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except Exception:
+        logger.exception("fetching report id=%r failed", report_id)
+        raise HTTPException(status_code=500, detail=GENERIC_REPORT_ERROR_DETAIL) from None
+
+    return ReportResponse(**result)
+
+
+@app.delete("/reports/{report_id}")
+def delete_report(report_id: int) -> JSONResponse:
+    try:
+        reporting.delete_report(report_id)
+    except reporting.ReportNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except Exception:
+        logger.exception("deleting report id=%r failed", report_id)
+        raise HTTPException(status_code=500, detail=GENERIC_REPORT_ERROR_DETAIL) from None
+
+    return JSONResponse(content={"deleted": True, "id": report_id})
 
 
 if __name__ == "__main__":

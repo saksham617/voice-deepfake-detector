@@ -19,3 +19,8 @@ librosa==1.0.0
 soundfile==0.14.0
 numpy==2.5.2
 pandas==3.0.5
+
+# Speaker verification (src/models/speaker_verification.py): SpeechBrain's
+# pretrained ECAPA-TDNN, downloaded from Hugging Face Hub at first load.
+speechbrain==1.1.1
+torchaudio==2.11.0

@@ -50,12 +50,19 @@ def extract_log_mel_spectrogram(
     hop_length: int = HOP_LENGTH,
     n_mels: int = N_MELS,
     fixed_frames: int = FIXED_FRAMES,
+    loader=load_audio,
 ) -> np.ndarray:
     """Load one audio file and extract a fixed-size log-Mel spectrogram.
 
+    `loader` defaults to load_audio (assumes the file is already 16 kHz
+    mono, true for every ASVspoof dataset file -- used unchanged by
+    training). Inference on arbitrary uploads passes
+    audio_io.load_audio_resampled instead, so non-conforming files get
+    resampled/mixed to mono before feature extraction.
+
     Returns an array of shape (n_mels, fixed_frames) in dB scale.
     """
-    waveform, sample_rate = load_audio(path)
+    waveform, sample_rate = loader(path)
     mel_power = librosa.feature.melspectrogram(
         y=waveform,
         sr=sample_rate,
