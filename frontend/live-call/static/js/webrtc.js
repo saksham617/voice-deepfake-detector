@@ -1,5 +1,5 @@
 // WebRTC helpers for the VoiceGuard demo.
-// Primary: room-based auto-signaling via the backend (/ws/signal/<room>).
+// Primary: room-based auto-signaling via the backend (/live-call/ws/signal/<room>).
 // Fallback: manual SDP copy-paste (VG.encodeSdp / VG.decodeSdp), still exported.
 
 window.VG = window.VG || {};
@@ -31,7 +31,7 @@ VG.decodeSdp = (text) => new RTCSessionDescription(JSON.parse(atob(text.trim()))
 VG.autoConnect = function (role, room, pc, onStatus = () => {}) {
   return new Promise((resolve, reject) => {
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/ws/signal/${encodeURIComponent(room)}`);
+    const ws = new WebSocket(`${proto}://${location.host}/live-call/ws/signal/${encodeURIComponent(room)}`);
     const sendSignal = (o) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(o));
 
     pc.onicecandidate = (e) => {

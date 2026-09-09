@@ -26,14 +26,14 @@
   };
 
   async function startStreaming(remoteStream) {
-    await fetch("/config").then((r) => r.json()).catch(() => ({}));
+    await fetch("/live-call/config").then((r) => r.json()).catch(() => ({}));
 
     ctx = new AudioContext();
     if (ctx.state === "suspended") await ctx.resume(); // ontrack fires after the click gesture
     const src = ctx.createMediaStreamSource(remoteStream);
 
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    ws = new WebSocket(`${proto}://${location.host}/ws/stream`);
+    ws = new WebSocket(`${proto}://${location.host}/live-call/ws/stream`);
     ws.binaryType = "arraybuffer";
     ws.onopen = () =>
       ws.send(JSON.stringify({ type: "config", input_sample_rate: ctx.sampleRate }));
@@ -44,7 +44,7 @@
     const send = (buf) => ws.readyState === WebSocket.OPEN && ws.send(buf);
 
     try {
-      await ctx.audioWorklet.addModule("/static/js/pcm-worklet.js");
+      await ctx.audioWorklet.addModule("static/js/pcm-worklet.js");
       const node = new AudioWorkletNode(ctx, "pcm-worklet", {
         processorOptions: { frameMs: 85 },
       });
