@@ -54,7 +54,7 @@ def _pcm(seconds, sr=16000):
 def test_sustained_spoof_raises_high_and_fires_webhook(app_with_stubs):
     app, hook = app_with_stubs
     with TestClient(app) as client:
-        with client.websocket_connect("/ws/stream") as ws:
+        with client.websocket_connect("/live-call/ws/stream") as ws:
             assert ws.receive_json()["type"] == "ready"
             ws.send_text(json.dumps({"type": "config", "input_sample_rate": 16000}))
 

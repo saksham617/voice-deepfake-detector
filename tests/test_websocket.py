@@ -37,7 +37,7 @@ def _drain_scores(ws, expected: int, timeout: float = 10.0) -> list[dict]:
 def test_ws_stream_paced_delivers_every_window():
     """At ~real-time pacing the server keeps up: one score per analysis window, no drops."""
     with TestClient(app) as client:
-        with client.websocket_connect("/ws/stream") as ws:
+        with client.websocket_connect("/live-call/ws/stream") as ws:
             ready = ws.receive_json()
             assert ready["type"] == "ready" and ready["session_id"]
             ws.send_text(json.dumps({"type": "config", "input_sample_rate": 16000}))
@@ -64,7 +64,7 @@ def test_ws_stream_burst_coalesces_without_error():
     """A burst faster than inference: connection stays healthy, windows coalesce, indices
     stay monotonic, and at least one score comes back."""
     with TestClient(app) as client:
-        with client.websocket_connect("/ws/stream") as ws:
+        with client.websocket_connect("/live-call/ws/stream") as ws:
             ws.receive_json()  # ready
             ws.send_text(json.dumps({"type": "config", "input_sample_rate": 16000}))
             ws.send_bytes(_pcm_int16(5.0, 16000))  # dump 5 s at once
@@ -77,7 +77,7 @@ def test_ws_stream_burst_coalesces_without_error():
 def test_ws_stream_accepts_upstream_resample():
     """Browser mic is typically 48 kHz; server must downsample to 16 kHz before chunking."""
     with TestClient(app) as client:
-        with client.websocket_connect("/ws/stream") as ws:
+        with client.websocket_connect("/live-call/ws/stream") as ws:
             ws.receive_json()  # ready
             ws.send_text(json.dumps({"type": "config", "input_sample_rate": 48000}))
             ws.send_bytes(_pcm_int16(4.0, 48000))  # 4 s @ 48k -> 4 s @ 16k -> one window
