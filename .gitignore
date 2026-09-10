@@ -114,6 +114,9 @@ frontend/dist/
 # cnn_baseline.pt: ~13MB, well under GitHub's limits, committed as a normal blob.
 !data/processed/models/
 !data/processed/models/cnn_baseline.pt
+# message_classifier.joblib: TF-IDF + LogisticRegression pipeline, well
+# under 1MB, committed as a normal blob (src/models/message_detection.py).
+!data/processed/models/message_classifier.joblib
 # aasist_indicw2v.pt: ~1.26GB, tracked via Git LFS (see .gitattributes).
 !backend/models/aasist_indicw2v.pt
 .vercel

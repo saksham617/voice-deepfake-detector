@@ -28,6 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.core import get_config
+from src.models import message_detection as md
 from src.models import reporting
 from src.models import speaker_verification as sv
 from src.models.inference import ensure_model_loaded
@@ -127,6 +128,14 @@ async def lifespan(app: FastAPI):
     except Exception:
         app.state.speaker_model_ready = False
         logger.exception("speaker verification model failed to load at startup")
+
+    try:
+        md.ensure_model_loaded()
+        app.state.message_model_ready = True
+        logger.info("message detection model loaded successfully")
+    except Exception:
+        app.state.message_model_ready = False
+        logger.exception("message detection model failed to load at startup")
 
     try:
         reporting.ensure_db_ready()

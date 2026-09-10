@@ -7,6 +7,7 @@ deployed React frontend depends on, per frontend/src/types/prediction.ts):
     POST   /predict          multipart "file" -> bonafide/spoof + confidence
     POST   /enroll_speaker    multipart "name" + "file" -> enroll a voiceprint
     POST   /verify_speaker    multipart "name" + "file" -> match against one
+    POST   /check_message     json "text" -> safe/suspicious + confidence
     POST   /report            create a report
     GET    /reports           list reports
     GET    /reports/{id}      fetch one report
@@ -30,6 +31,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from src.models import message_detection as md
 from src.models import reporting
 from src.models import speaker_verification as sv
 from src.models.inference import predict_audio
@@ -53,6 +55,7 @@ _UPLOAD_CHUNK_SIZE = 1024 * 1024
 # against it directly instead of duplicating the string.
 GENERIC_PREDICTION_ERROR_DETAIL = "Internal error while processing the audio file."
 GENERIC_SPEAKER_ERROR_DETAIL = "Internal error while processing the speaker verification request."
+GENERIC_MESSAGE_ERROR_DETAIL = "Internal error while processing the message."
 GENERIC_REPORT_ERROR_DETAIL = "Internal error while processing the report."
 CORRUPT_AUDIO_ERROR_DETAIL = (
     "Could not read the uploaded audio file. It may be corrupted or in an unsupported format."
@@ -80,6 +83,16 @@ class VerifySpeakerResponse(BaseModel):
     short_clip: bool
 
 
+class CheckMessageRequest(BaseModel):
+    text: str
+
+
+class CheckMessageResponse(BaseModel):
+    verdict: str
+    confidence: float
+    spam_probability: float
+
+
 class ReportCreateRequest(BaseModel):
     type: str
     verdict: str
@@ -105,16 +118,17 @@ def health(request: Request) -> JSONResponse:
     load as unhealthy rather than routing traffic to a broken instance.
 
     Overall `status`/status-code tracks the primary spoof-detection model
-    only (the app's core feature); `speaker_model_ready`, `reports_db_ready`,
-    and `live_call_ready` are reported separately since the endpoints for
-    those features fail with their own clear errors rather than a confusing
-    500."""
+    only (the app's core feature); `speaker_model_ready`,
+    `message_model_ready`, `reports_db_ready`, and `live_call_ready` are
+    reported separately since the endpoints for those features fail with
+    their own clear errors rather than a confusing 500."""
     state = request.app.state
     model_ready = getattr(state, "model_ready", False)
     payload = {
         "status": "ok" if model_ready else "error",
         "model_ready": model_ready,
         "speaker_model_ready": getattr(state, "speaker_model_ready", False),
+        "message_model_ready": getattr(state, "message_model_ready", False),
         "reports_db_ready": getattr(state, "reports_db_ready", False),
         "live_call_ready": getattr(state, "live_call_ready", False),
     }
@@ -124,6 +138,11 @@ def health(request: Request) -> JSONResponse:
 def _require_speaker_model_ready(request: Request) -> None:
     if not getattr(request.app.state, "speaker_model_ready", False):
         raise HTTPException(status_code=503, detail="Speaker verification model is not ready.")
+
+
+def _require_message_model_ready(request: Request) -> None:
+    if not getattr(request.app.state, "message_model_ready", False):
+        raise HTTPException(status_code=503, detail="Message detection model is not ready.")
 
 
 def _save_upload_to_tempfile(file: UploadFile, suffix: str) -> str:
@@ -245,6 +264,21 @@ def verify_speaker(
         Path(tmp_path).unlink(missing_ok=True)
 
     return VerifySpeakerResponse(**result)
+
+
+@router.post("/check_message", response_model=CheckMessageResponse)
+def check_message(request: Request, payload: CheckMessageRequest) -> CheckMessageResponse:
+    _require_message_model_ready(request)
+
+    try:
+        result = md.classify_message(payload.text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except Exception:
+        logger.exception("message classification failed for text of length %d", len(payload.text))
+        raise HTTPException(status_code=500, detail=GENERIC_MESSAGE_ERROR_DETAIL) from None
+
+    return CheckMessageResponse(**result)
 
 
 @router.post("/report", response_model=ReportResponse)
