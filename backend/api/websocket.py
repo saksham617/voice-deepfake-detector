@@ -44,6 +44,18 @@ router = APIRouter()
 _DISCONNECT_ERRORS = (WebSocketDisconnect, OSError, RuntimeError)
 
 
+def _score_window(pipeline, vad, window):
+    """VAD-gate then (maybe) run the classifier, off the event loop.
+
+    Returns ``None`` for a window VAD classifies as non-speech -- it is never handed to
+    the fake-detection model, which was only ever trained on real/fake *speech* and has no
+    reliable behaviour on pure background noise.
+    """
+    if vad is not None and not vad.is_speech(window):
+        return None
+    return pipeline.infer_chunk(window)
+
+
 # --------------------------------------------------------------------------- signaling relay
 # Minimal room-based WebRTC signaling so caller/receiver auto-connect by a shared code
 # instead of copy-pasting SDP. Not for production (no auth, in-memory, single worker).
@@ -89,10 +101,11 @@ async def stream(ws: WebSocket) -> None:
     session_id = uuid.uuid4().hex[:12]
 
     # lazy import so Day 1/2 work before the pipeline is ready
-    from backend.main import get_pipeline, get_webhook
+    from backend.main import get_pipeline, get_vad, get_webhook
     from backend.scoring import RiskEngine
 
     pipeline = get_pipeline()
+    vad = get_vad()  # None if vad.enabled=false in config
     risk = RiskEngine.from_config(cfg.risk)
     webhook = get_webhook()
 
@@ -139,6 +152,7 @@ async def stream(ws: WebSocket) -> None:
 
     await ws.send_json({"type": "ready", "session_id": session_id})
     recv_task = asyncio.create_task(receiver())
+    window_index = 0  # every window seen, scored or VAD-skipped
 
     try:
         while True:
@@ -153,8 +167,14 @@ async def stream(ws: WebSocket) -> None:
             pending["window"] = None
             dropped = pending["dropped"]
             pending["dropped"] = 0
+            window_index += 1
 
-            result = await asyncio.to_thread(pipeline.infer_chunk, window)
+            result = await asyncio.to_thread(_score_window, pipeline, vad, window)
+            if result is None:
+                # VAD says non-speech: skip scoring entirely rather than force a fake_prob
+                # out of a model that was never trained on non-speech audio.
+                await ws.send_json({"type": "vad_skip", "index": window_index, "dropped": dropped})
+                continue
             state = risk.update(result.fake_prob)
 
             await ws.send_json(

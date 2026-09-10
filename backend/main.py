@@ -62,6 +62,9 @@ CORS_ORIGINS = (
 
 _pipeline = None
 _webhook = None
+_vad = None
+_VAD_UNSET = object()
+_vad_loaded = _VAD_UNSET
 
 
 def get_pipeline():
@@ -73,6 +76,25 @@ def get_pipeline():
 
         _pipeline = DetectionPipeline.from_config(get_config())
     return _pipeline
+
+
+def get_vad():
+    """App-scoped Silero VAD singleton gating the live-call stream, or ``None`` if
+    ``vad.enabled`` is false in config."""
+    global _vad, _vad_loaded
+    if _vad_loaded is _VAD_UNSET:
+        cfg = get_config().vad
+        if cfg.enabled:
+            from backend.audio import SileroVAD
+
+            _vad = SileroVAD(
+                frame_threshold=cfg.frame_threshold,
+                min_speech_ratio=cfg.min_speech_ratio,
+            )
+        else:
+            _vad = None
+        _vad_loaded = True
+    return _vad
 
 
 def get_webhook():
@@ -116,6 +138,7 @@ async def lifespan(app: FastAPI):
 
     try:
         get_pipeline()  # warm the live-call AASIST + SSL frontend
+        get_vad()  # warm the VAD gate (no-op if vad.enabled=false)
         get_webhook()
         app.state.live_call_ready = True
         logger.info("live-call detection pipeline loaded successfully")

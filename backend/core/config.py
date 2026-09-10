@@ -8,7 +8,7 @@ environment variable ``VG_<SECTION>__<KEY>`` (double underscore = nesting), e.g.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +43,17 @@ class FeatureExtractorConfig:
     feat_dim: int = 1024
     quantize: str = "none"  # none | int8 — dynamic-quantize the SSL frontend's Linear layers
                             # (~1.2 GB -> ~0.4 GB, ~25% faster on CPU) for memory-tight serving
+
+
+@dataclass
+class VADConfig:
+    # Gates the live-call stream ahead of the fake-detection model: AASIST/XLS-R was only
+    # ever trained to tell real vs. fake *speech* apart, and drifts into a sustained
+    # HIGH-risk score on pure background noise. Non-speech windows are skipped entirely
+    # (not scored) rather than fed to the classifier.
+    enabled: bool = True
+    frame_threshold: float = 0.5    # per 32 ms frame, Silero's own speech-prob cutoff
+    min_speech_ratio: float = 0.2   # fraction of frames in a window that must be speech
 
 
 @dataclass
@@ -95,6 +106,7 @@ class Config:
     risk: RiskConfig
     webhook: WebhookConfig
     server: ServerConfig
+    vad: VADConfig = field(default_factory=VADConfig)
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "Config":
@@ -105,6 +117,7 @@ class Config:
             risk=RiskConfig(**raw.get("risk", {})),
             webhook=WebhookConfig(**raw.get("webhook", {})),
             server=ServerConfig(**raw.get("server", {})),
+            vad=VADConfig(**raw.get("vad", {})),
         )
 
 

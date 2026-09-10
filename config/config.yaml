@@ -30,6 +30,14 @@ classifier:
   checkpoint: backend/models/aasist_indicw2v.pt   # created by training/ (absent on Day 1)
   device: cpu                 # cpu | cuda
 
+vad:
+  # Silero VAD gate ahead of the classifier: AASIST/XLS-R was only ever trained to tell
+  # real vs. fake *speech* apart and has no reliable behaviour on pure background noise —
+  # non-speech analysis windows are skipped entirely instead of being scored.
+  enabled: true
+  frame_threshold: 0.5        # per 32 ms frame, Silero's own speech-probability cutoff
+  min_speech_ratio: 0.2       # fraction of a window's frames that must be speech to score it
+
 risk:
   window: 10                  # rolling window size (chunks)
   weighting: linear           # linear | exponential | uniform

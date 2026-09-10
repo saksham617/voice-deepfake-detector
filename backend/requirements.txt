@@ -32,3 +32,7 @@ transformers==5.16.1
 huggingface_hub==1.30.0
 websockets==17.1
 PyYAML==6.0.3
+
+# VAD gate ahead of the classifier (backend/audio/vad.py): ships its own small JIT model,
+# no extra runtime beyond torch/torchaudio already above.
+silero-vad==6.2.1
