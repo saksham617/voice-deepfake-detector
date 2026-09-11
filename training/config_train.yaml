@@ -50,8 +50,12 @@ augment:
   environmental_p: 0.5
   environmental_snr_min_db: 0
   environmental_snr_max_db: 20
-  musan_dir: data/raw/musan/musan/noise
-  rir_dir: data/raw/rir_noises/RIRS_NOISES/simulated_rirs
+  # Kaggle-input paths (this notebook's attached Datasets) — switch back to the
+  # local data/raw/ paths below if running outside this Kaggle notebook.
+  musan_dir: /kaggle/input/datasets/nhattruongdev/musan-noise/musan/noise
+  rir_dir: /kaggle/input/datasets/tuannguyenvananh/room-impulse-response-and-noise-database/RIRS_NOISES/simulated_rirs
+  # musan_dir: data/raw/musan/musan/noise
+  # rir_dir: data/raw/rir_noises/RIRS_NOISES/simulated_rirs
 
 checkpoint:
   out: backend/models/aasist_indicw2v.pt
