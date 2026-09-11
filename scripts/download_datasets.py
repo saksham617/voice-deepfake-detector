@@ -13,11 +13,17 @@ Target layout under data/raw/:
   in_the_wild/         release_in_the_wild/  meta.csv            (deepfake-total.com)
   indictts/<lang>/     *.wav + transcripts.tsv                   (SPRINGLab IndicTTS via HF)
   fleurs/<lang>/       {split}/*.wav + transcripts.tsv           (google/fleurs via HF)
+  musan/musan/noise/   *.wav                                     (OpenSLR 17, noise subset only)
+  rir_noises/RIRS_NOISES/  simulated_rirs/ + real_rirs_isotropic_noises/ (OpenSLR 28)
 
 Genuine Indian-language speech: SPRINGLab/IndicTTS_* on HF is the IIT-Madras IndicTTS corpus
 itself, non-gated — no email request needed. We stream a capped number of utts per language
 (INDICTTS_N) since the full corpora are ~6-8 GB each. FLEURS adds read-speech speaker variety
 and a separate genuine-domain eval slice. See scripts/generate_indian_fakes.py for fakes.
+
+MUSAN + RIRS_NOISES back training/augment_environmental.py's background-noise / room-reverb
+augmentation (complements RawBoost in training/augment.py, which has no real-world noise or
+reverb model). Both are direct OpenSLR downloads, non-gated.
 """
 
 from __future__ import annotations
@@ -63,9 +69,17 @@ DIRECT = {
         "https://www.asvspoof.org/asvspoof2021/LA-keys-full.tar.gz",
         "asvspoof2021_LA_eval/LA-keys-full.tar.gz",
     ),
+    "musan": (
+        "https://www.openslr.org/resources/17/musan.tar.gz",
+        "musan/musan.tar.gz",
+    ),
+    "rir_noises": (
+        "https://www.openslr.org/resources/28/rirs_noises.zip",
+        "rir_noises/rirs_noises.zip",
+    ),
 }
 
-SOURCES = ["asvspoof2019", "asvspoof2021", "in_the_wild", "indictts", "fleurs"]
+SOURCES = ["asvspoof2019", "asvspoof2021", "in_the_wild", "indictts", "fleurs", "musan", "rir_noises"]
 
 
 # --------------------------------------------------------------------------- helpers
@@ -195,12 +209,37 @@ def get_fleurs() -> None:
         print(f"    {total} utts")
 
 
+def get_musan() -> None:
+    """MUSAN noise/music/speech corpus (OpenSLR 17, ~11 GB tar.gz — no partial-fetch, so the
+    whole file downloads). We only extract the `musan/noise/` subset (~1 GB) since that's
+    what training/augment_environmental.py mixes in; music/speech stay in the tar unextracted."""
+    print("MUSAN  (OpenSLR 17, ~11 GB download, noise/ subset extracted)")
+    url, rel = DIRECT["musan"]
+    dest = RAW / rel
+    _curl(url, dest)
+    into = dest.parent
+    print(f"  extract musan/noise/* -> {into.relative_to(RAW)}")
+    with tarfile.open(dest) as t:
+        members = [m for m in t.getmembers() if m.name.startswith("musan/noise/")]
+        t.extractall(into, members=members, filter="data")
+
+
+def get_rir_noises() -> None:
+    print("RIRS_NOISES  (OpenSLR 28, ~1 GB)")
+    url, rel = DIRECT["rir_noises"]
+    dest = RAW / rel
+    _curl(url, dest)
+    _extract(dest, dest.parent)
+
+
 FETCHERS = {
     "asvspoof2019": get_asvspoof2019,
     "asvspoof2021": get_asvspoof2021,
     "in_the_wild": get_in_the_wild,
     "indictts": get_indictts,
     "fleurs": get_fleurs,
+    "musan": get_musan,
+    "rir_noises": get_rir_noises,
 }
 
 
@@ -213,6 +252,8 @@ def show_status() -> None:
         "in_the_wild": RAW / "in_the_wild" / "release_in_the_wild",
         "indictts": RAW / "indictts",
         "fleurs": RAW / "fleurs",
+        "musan": RAW / "musan" / "musan" / "noise",
+        "rir_noises": RAW / "rir_noises" / "RIRS_NOISES",
     }
     for name, path in checks.items():
         n = sum(1 for _ in path.rglob("*")) if path.exists() else 0
