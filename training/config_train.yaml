@@ -44,6 +44,14 @@ augment:
   rawboost: true          # e2e only (waveform-level)
   rawboost_mode: 5        # 1 conv · 2 impulsive · 3 stationary · 4 (1->2) · 5 (1->2 +3) · 6 (1+2)
   rawboost_p: 0.5
+  environmental: true          # e2e only. MUSAN noise + RIR reverb — complements rawboost,
+                                # which has no real-world ambient noise / room reverb model.
+  environmental_mode: both     # noise | reverb | both
+  environmental_p: 0.5
+  environmental_snr_min_db: 0
+  environmental_snr_max_db: 20
+  musan_dir: data/raw/musan/musan/noise
+  rir_dir: data/raw/rir_noises/RIRS_NOISES/simulated_rirs
 
 checkpoint:
   out: backend/models/aasist_indicw2v.pt

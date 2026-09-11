@@ -6,9 +6,9 @@
 Two modes, chosen automatically (override with --mode):
   * frozen  — SSL features cached to disk once, AASIST head trains off the cache. Fast,
     CPU-viable. No waveform augmentation. ~5-10% EER.
-  * e2e     — waveform -> (RawBoost) -> trainable SSL frontend -> AASIST, end to end. Needs
-    a GPU. Frontend frozen for `stage2_unfreeze_epoch` epochs then unfrozen at lr*mult.
-    This is the quality path (~<1% EER on ASVspoof).
+  * e2e     — waveform -> (RawBoost + MUSAN/RIR environmental) -> trainable SSL frontend ->
+    AASIST, end to end. Needs a GPU. Frontend frozen for `stage2_unfreeze_epoch` epochs then
+    unfrozen at lr*mult. This is the quality path (~<1% EER on ASVspoof).
 
 Best dev-EER checkpoint -> backend/models/aasist_indicw2v.pt (the live pipeline auto-loads
 it; if the frontend was fine-tuned, its weights ride along in the same file).
@@ -157,7 +157,23 @@ def _run_frozen(cfg, device, args) -> float:
                        })
 
 
-# ----------------------------------------------------------------- e2e mode (waveform + RawBoost)
+def _compose_augment(*fns):
+    """Chain waveform augmenters into one callable(np.ndarray)->np.ndarray for
+    ManifestDataset's single ``augment`` slot. Each fn gates itself (own probability), so a
+    sample can draw any subset of them independently."""
+    fns = [f for f in fns if f is not None]
+    if not fns:
+        return None
+
+    def _apply(wav):
+        for f in fns:
+            wav = f(wav)
+        return wav
+
+    return _apply
+
+
+# ----------------------------------------------------------------- e2e mode (waveform + RawBoost + environmental)
 def _run_e2e(cfg, device, args) -> float:
     from training.dataset import ManifestDataset, collate_waveforms
     from training.losses import make_loss
@@ -171,10 +187,25 @@ def _run_e2e(cfg, device, args) -> float:
 
         rb = RawBoost(mode=int(aug.get("rawboost_mode", 5)), p=float(aug.get("rawboost_p", 0.5)))
 
+    env = None
+    if aug.get("environmental"):
+        from training.augment_environmental import EnvironmentalAugment
+
+        env = EnvironmentalAugment(
+            musan_dir=aug.get("musan_dir"),
+            rir_dir=aug.get("rir_dir"),
+            mode=aug.get("environmental_mode", "both"),
+            p=float(aug.get("environmental_p", 0.5)),
+            snr_min_db=float(aug.get("environmental_snr_min_db", 0.0)),
+            snr_max_db=float(aug.get("environmental_snr_max_db", 20.0)),
+        )
+
+    combined_aug = _compose_augment(rb, env)
+
     crop = float(cfg.get("crop_seconds", 4.0))
     dev_lim = max(args.limit // 4, 8) if args.limit else cfg.get("dev_subsample")
     tr = ManifestDataset(cfg["manifests"]["train"], crop_seconds=crop, train=True,
-                         augment=rb, limit=args.limit)
+                         augment=combined_aug, limit=args.limit)
     dv = ManifestDataset(cfg["manifests"]["dev"], crop_seconds=crop, train=False)
     if dev_lim:
         dv.samples = _balanced_head(dv.samples, dev_lim)
@@ -213,7 +244,8 @@ def _run_e2e(cfg, device, args) -> float:
     head_params = list(model.classifier.parameters()) + list(loss_fn.parameters())
     opt = torch.optim.AdamW(head_params, lr=o.get("lr", 1e-4),
                             weight_decay=o.get("weight_decay", 1e-4))
-    print(f"[e2e] train={len(tr)} dev={len(dv)} frontend={fe['model_id']} rawboost={rb is not None}")
+    print(f"[e2e] train={len(tr)} dev={len(dv)} frontend={fe['model_id']} "
+          f"rawboost={rb is not None} environmental={env is not None}")
 
     unfreeze_ep = fe.get("stage2_unfreeze_epoch")
     fe_lr = o.get("lr", 1e-4) * o.get("frontend_lr_mult", 0.1)
