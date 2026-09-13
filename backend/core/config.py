@@ -57,6 +57,24 @@ class VADConfig:
 
 
 @dataclass
+class NoiseGuardConfig:
+    # Background-noise quality guard (backend/audio/noise_guard.py), run on speech windows
+    # AFTER the VAD gate: estimates a blind SNR from the window's frame-energy distribution
+    # and warns the user only when noise is severe enough to make a verdict unreliable.
+    # Silent on clean/mild by design. dB thresholds are PROVISIONAL — calibrate with
+    # scripts/calibrate_noise_warning.py, then validate on real recordings, before trusting.
+    enabled: bool = True
+    clean_snr_db: float = 20.0        # snr >= this => clean
+    mild_snr_db: float = 12.0         # [mild, clean)  => mild
+    moderate_snr_db: float = 6.0      # [moderate, mild) => moderate; below => severe
+    warn_min_severity: str = "severe" # warn when severity is at or worse than this
+    frame_ms: float = 25.0            # analysis frame length for the energy histogram
+    hop_ms: float = 10.0
+    noise_percentile: float = 10.0    # low percentile of frame powers = noise floor
+    speech_percentile: float = 95.0   # high percentile = voiced speech level
+
+
+@dataclass
 class ClassifierConfig:
     embed_dim: int = 256
     num_classes: int = 2
@@ -107,6 +125,7 @@ class Config:
     webhook: WebhookConfig
     server: ServerConfig
     vad: VADConfig = field(default_factory=VADConfig)
+    noise_guard: NoiseGuardConfig = field(default_factory=NoiseGuardConfig)
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "Config":
@@ -118,6 +137,7 @@ class Config:
             webhook=WebhookConfig(**raw.get("webhook", {})),
             server=ServerConfig(**raw.get("server", {})),
             vad=VADConfig(**raw.get("vad", {})),
+            noise_guard=NoiseGuardConfig(**raw.get("noise_guard", {})),
         )
 
 

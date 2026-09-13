@@ -38,6 +38,22 @@ vad:
   frame_threshold: 0.5        # per 32 ms frame, Silero's own speech-probability cutoff
   min_speech_ratio: 0.2       # fraction of a window's frames that must be speech to score it
 
+noise_guard:
+  # Background-noise quality guard (backend/audio/noise_guard.py), run on speech windows
+  # after the VAD gate. Estimates a blind SNR from the window's frame-energy distribution and
+  # warns the user only when noise is severe enough to make a verdict unreliable — SILENT on
+  # clean/mild by design. The dB thresholds below are PROVISIONAL defaults: calibrate them
+  # with `python scripts/calibrate_noise_warning.py`, validate on real recordings, then commit.
+  enabled: true
+  clean_snr_db: 20.0          # snr >= this  => clean   (no warning)
+  mild_snr_db: 12.0           # [12, 20)      => mild    (no warning)
+  moderate_snr_db: 6.0        # [6, 12)       => moderate (no warning by default); below => severe
+  warn_min_severity: severe   # warn only when severity is at or worse than this
+  frame_ms: 25.0              # frame length for the per-frame energy histogram
+  hop_ms: 10.0
+  noise_percentile: 10.0      # low percentile of frame powers taken as the noise floor
+  speech_percentile: 95.0     # high percentile taken as the voiced-speech level
+
 risk:
   window: 10                  # rolling window size (chunks)
   weighting: linear           # linear | exponential | uniform
