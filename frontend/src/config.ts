@@ -24,6 +24,15 @@ export const USE_MOCK: boolean =
 /** The prediction endpoint path. */
 export const PREDICT_PATH = "/predict";
 
+/** Message phishing-check endpoint path. */
+export const MESSAGE_CHECK_PATH = "/check_message";
+
+/** Speaker voiceprint enrollment endpoint path. */
+export const ENROLL_SPEAKER_PATH = "/enroll_speaker";
+
+/** Speaker voiceprint verification endpoint path. */
+export const VERIFY_SPEAKER_PATH = "/verify_speaker";
+
 /**
  * Audio formats the UI accepts. Kept in sync with what the backend supports.
  * Update this list when the backend's supported formats are confirmed.
@@ -55,3 +64,11 @@ export const ACCEPTED_AUDIO_EXTENSIONS = [
 
 /** Maximum upload size (bytes). 25 MB is generous for short clips. */
 export const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Display label for the active detection model. The API doesn't return a
+ * model identifier, so this mirrors what backend/api/legacy.py actually runs
+ * (src.models.inference.predict_audio, a CNN spoof classifier) as a static
+ * label for the "Quick metrics" row.
+ */
+export const MODEL_NAME = "CNN Spoof Detector";

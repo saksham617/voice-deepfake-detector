@@ -10,15 +10,15 @@ export function ErrorBanner({ message, onDismiss }: ErrorBannerProps) {
   return (
     <div
       role="alert"
-      className="flex items-start gap-3 rounded-xl border border-spoof/30 bg-spoof/10 px-4 py-3"
+      className="flex items-start gap-3 rounded-xl border border-high/30 bg-high-dim px-4 py-3"
     >
-      <AlertIcon className="mt-0.5 h-5 w-5 shrink-0 text-spoof" />
-      <p className="flex-1 text-sm text-slate-200">{message}</p>
+      <AlertIcon className="mt-0.5 h-5 w-5 shrink-0 text-high" />
+      <p className="flex-1 text-sm text-ink">{message}</p>
       {onDismiss && (
         <button
           type="button"
           onClick={onDismiss}
-          className="text-xs font-medium text-slate-400 hover:text-white transition-colors"
+          className="text-xs font-medium text-ink-dim hover:text-ink transition-colors"
         >
           Dismiss
         </button>

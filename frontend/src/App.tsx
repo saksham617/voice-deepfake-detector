@@ -1,16 +1,25 @@
-import { Header } from "./components/Header";
+import { Route, Routes } from "react-router-dom";
+import { AppLayout } from "./layouts/AppLayout";
 import { AnalyzerPage } from "./pages/AnalyzerPage";
+import { ContactsPage } from "./pages/ContactsPage";
+import { LiveCallPage } from "./pages/LiveCallPage";
+import { MessageCheckPage } from "./pages/MessageCheckPage";
+import { NumberTimelinePage } from "./pages/NumberTimelinePage";
+import { OverviewPage } from "./pages/OverviewPage";
+import { ReportsPage } from "./pages/ReportsPage";
 
 export default function App() {
   return (
-    <div className="app-backdrop min-h-screen flex flex-col">
-      <Header />
-      <main className="flex-1">
-        <AnalyzerPage />
-      </main>
-      <footer className="py-6 text-center text-xs text-slate-500">
-        VoiceGuard · Voice Deepfake Detection · SIH Demonstration
-      </footer>
-    </div>
+    <Routes>
+      <Route element={<AppLayout />}>
+        <Route index element={<OverviewPage />} />
+        <Route path="voice-check" element={<AnalyzerPage />} />
+        <Route path="message-check" element={<MessageCheckPage />} />
+        <Route path="contacts" element={<ContactsPage />} />
+        <Route path="live-call" element={<LiveCallPage />} />
+        <Route path="reports" element={<ReportsPage />} />
+        <Route path="reports/number/:phoneNumber" element={<NumberTimelinePage />} />
+      </Route>
+    </Routes>
   );
 }

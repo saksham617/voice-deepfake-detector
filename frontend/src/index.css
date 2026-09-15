@@ -2,6 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design-system tokens (new visual language). Referenced by tailwind.config.js
+ * (canvas/panel/line/ink/safe/medium/high/info) so pages can be migrated one
+ * at a time without touching the legacy `surface`/`accent` tokens still used
+ * by not-yet-restyled pages (e.g. Voice Check).
+ */
+:root {
+  --bg: #0a0d11;
+  --panel: #10141a;
+  --panel-raised: #151a21;
+  --border: #1f252d;
+  --border-strong: #2a323d;
+  --text: #e6e9ed;
+  --text-dim: #7b8794;
+  --text-faint: #4b5563;
+  --safe: #34d399;
+  --safe-dim: #0d3327;
+  --medium: #f5a524;
+  --medium-dim: #3a2a0a;
+  --high: #ef4444;
+  --high-dim: #3a1414;
+  --accent: #93c5fd;
+}
+
 @layer base {
   html {
     color-scheme: dark;

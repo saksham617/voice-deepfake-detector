@@ -21,6 +21,41 @@ export default {
         },
         bonafide: "#2fe3a2",
         spoof: "#ff5b6e",
+
+        // New design-system palette, backed by the CSS variables in index.css.
+        // Namespaced separately from `surface`/`accent` above so pages keep
+        // rendering with the old tokens until they're migrated one at a time
+        // (Sidebar/ComingSoon use these now; Voice Check still uses the old
+        // ones until its own redesign pass). Note: the spec's own `--accent`
+        // CSS variable (light blue, for links/info) is exposed here as `info`
+        // to avoid clashing with the existing teal `accent` above.
+        canvas: "var(--bg)",
+        panel: {
+          DEFAULT: "var(--panel)",
+          raised: "var(--panel-raised)",
+        },
+        line: {
+          DEFAULT: "var(--border)",
+          strong: "var(--border-strong)",
+        },
+        ink: {
+          DEFAULT: "var(--text)",
+          dim: "var(--text-dim)",
+          faint: "var(--text-faint)",
+        },
+        safe: {
+          DEFAULT: "var(--safe)",
+          dim: "var(--safe-dim)",
+        },
+        medium: {
+          DEFAULT: "var(--medium)",
+          dim: "var(--medium-dim)",
+        },
+        high: {
+          DEFAULT: "var(--high)",
+          dim: "var(--high-dim)",
+        },
+        info: "var(--accent)",
       },
       fontFamily: {
         sans: [
@@ -32,6 +67,23 @@ export default {
           "sans-serif",
         ],
         mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "monospace"],
+
+        // New design-system typefaces (Sidebar/ComingSoon and pages migrated
+        // after them). Loaded via Google Fonts in index.html.
+        plexSans: [
+          "IBM Plex Sans",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
+          "Roboto",
+          "sans-serif",
+        ],
+        plexMono: [
+          "IBM Plex Mono",
+          "ui-monospace",
+          "SFMono-Regular",
+          "monospace",
+        ],
       },
       keyframes: {
         flow1: {
