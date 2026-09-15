@@ -119,5 +119,9 @@ frontend/dist/
 !data/processed/models/message_classifier.joblib
 # aasist_indicw2v.pt: ~1.26GB, tracked via Git LFS (see .gitattributes).
 !backend/models/aasist_indicw2v.pt
+# message_bert/: fine-tuned DistilBERT (~268MB), produced by
+# scripts/train_message_bert.py. Too large to commit as a normal blob — regenerate
+# by training (like the voice checkpoints), so keep it out of git entirely.
+data/processed/models/message_bert/
 .vercel
 .env*

@@ -45,6 +45,7 @@ that don't otherwise resemble this dataset's dominant spam pattern
 (UK/Singapore premium-rate prize scams circa 2011).
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -208,6 +209,17 @@ def classify_message(text: str) -> dict:
     """
     if not text or not text.strip():
         raise ValueError("text must be a non-empty string.")
+
+    # Optional BERT backend: set VG_MESSAGE_BACKEND=bert to use the fine-tuned DistilBERT
+    # (scripts/train_message_bert.py). Falls back to TF-IDF if it hasn't been trained yet, so
+    # the default path stays torch-free and nothing breaks when the model is absent.
+    if os.environ.get("VG_MESSAGE_BACKEND", "tfidf").strip().lower() == "bert":
+        from src.models import message_detection_bert as _bert
+
+        try:
+            return _bert.classify_message(text)
+        except _bert.BertModelNotFoundError:
+            pass  # fall through to the shipped TF-IDF classifier
 
     classifier = get_classifier()
     spam_probability = float(classifier.predict_proba([text])[0, 1])
