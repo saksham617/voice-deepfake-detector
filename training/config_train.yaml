@@ -56,6 +56,16 @@ augment:
   rir_dir: /kaggle/input/datasets/tuannguyenvananh/room-impulse-response-and-noise-database/RIRS_NOISES/simulated_rirs
   # musan_dir: data/raw/musan/musan/noise
   # rir_dir: data/raw/rir_noises/RIRS_NOISES/simulated_rirs
+  telephone: true              # e2e only. Bandlimit (~300-3400Hz) + G.711 A-law codec
+                                # round-trip + light line noise — simulates a real phone-call
+                                # channel. Applied to BOTH bonafide and spoof (like rawboost/
+                                # environmental) so the model can't shortcut on "degraded
+                                # audio = fake" — see training/augment_telephone.py.
+  telephone_p: 0.45
+  telephone_low_hz: 300
+  telephone_high_hz: 3400
+  telephone_snr_min_db: 15
+  telephone_snr_max_db: 35
 
 checkpoint:
   out: backend/models/aasist_indicw2v.pt
