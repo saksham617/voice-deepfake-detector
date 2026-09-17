@@ -107,12 +107,18 @@ class TelephoneChannelAugment:
     def _add_line_noise(self, x: np.ndarray) -> np.ndarray:
         noise = self.rng.standard_normal(x.shape[0]).astype(np.float32)
         snr_db = float(self.rng.uniform(self.snr_min_db, self.snr_max_db))
-        ps = float(np.mean(x**2)) + 1e-9
-        pn = float(np.mean(noise**2)) + 1e-9
+        # power in float64: x**2 can overflow float32 (max ~3.4e38) well before it overflows
+        # float64, which then propagates to inf/nan through the scale factor below.
+        ps = float(np.mean(x.astype(np.float64) ** 2)) + 1e-9
+        pn = float(np.mean(noise.astype(np.float64) ** 2)) + 1e-9
         scale = np.sqrt(ps / (pn * (10 ** (snr_db / 10.0))))
-        return x + noise * scale
+        return x + noise * np.float32(scale)
 
     def __call__(self, wav: np.ndarray) -> np.ndarray:
+        # degenerate input (empty clip, or non-finite from an upstream decode error) — skip
+        # rather than let sosfilt/the codec math choke on it.
+        if wav.size == 0 or not np.all(np.isfinite(wav)):
+            return wav.astype(np.float32)
         if self.rng.random() > self.p:
             return wav.astype(np.float32)
         x = wav.astype(np.float32)

@@ -77,3 +77,53 @@ def test_reproducible_with_seed(seed):
     out_a = TelephoneChannelAugment(p=1.0, seed=42)(wav.copy())
     out_b = TelephoneChannelAugment(p=1.0, seed=42)(wav.copy())
     assert np.array_equal(out_a, out_b)
+
+
+# ---- regression: found via a real-training silent-failure investigation (dev EER came back
+# `inf`, no batch loss ever printed). A large scan of real ASVspoof clips at the actual e2e
+# 4s crop size never produced NaN/Inf, including deliberately-quiet clips and all-zero/tiny
+# synthetic input — the existing epsilon guards in alaw_roundtrip/_add_line_noise already
+# cover near-silent input correctly. Two other edge cases did break, fixed below.
+
+def test_empty_input_does_not_crash():
+    # dataset.py's tile-pad crop can hand an augmenter a zero-length array if a manifest row
+    # ever resolves to a corrupt/zero-duration clip; sosfilt previously raised ValueError
+    # ("cannot reshape array of size 0 into shape (0)") on this.
+    wav = np.zeros(0, dtype=np.float32)
+    aug = TelephoneChannelAugment(p=1.0, seed=20)
+    out = aug(wav)
+    assert out.shape == (0,)
+    assert out.dtype == np.float32
+
+
+def test_extreme_amplitude_does_not_overflow_to_nan():
+    # mean(x**2) in _add_line_noise previously overflowed float32 (max ~3.4e38) for
+    # amplitudes beyond ~1e19, producing inf -> the final peak-normalize's inf/inf then
+    # turned the whole clip to NaN. Not reachable from real [-1,1] decoded audio, but a real
+    # numerical-safety gap in the SNR-scaling math.
+    rng = np.random.default_rng(21)
+    for scale in (1e10, 1e20, 1e30):
+        wav = (rng.standard_normal(16000).astype(np.float32) * np.float32(scale))
+        out = TelephoneChannelAugment(p=1.0, seed=22)(wav)
+        assert np.isfinite(out).all(), f"NaN/Inf at amplitude scale {scale:g}"
+
+
+def test_non_finite_input_passed_through_not_amplified():
+    # if a non-finite value ever reaches here from an upstream decode error, don't let the
+    # codec/filter math turn it into a full-clip NaN — pass it through unchanged (an upstream
+    # data problem, not this augmenter's to fix).
+    wav = np.full(4000, np.inf, dtype=np.float32)
+    out = TelephoneChannelAugment(p=1.0, seed=23)(wav)
+    assert np.array_equal(out, wav)
+
+
+def test_bandpass_filter_is_stable():
+    # explicit stability check for the Butterworth bandpass sos, since filter instability on
+    # near-zero input is a known related failure mode in IIR filters generally (ruled out
+    # here — the filter's stability doesn't depend on input amplitude, only its own poles).
+    from scipy.signal import sos2tf, tf2zpk
+
+    aug = TelephoneChannelAugment(seed=24)
+    b, a = sos2tf(aug._sos)
+    _, poles, _ = tf2zpk(b, a)
+    assert np.all(np.abs(poles) < 1.0), f"unstable pole(s): {poles[np.abs(poles) >= 1.0]}"
