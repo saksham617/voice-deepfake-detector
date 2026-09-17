@@ -437,7 +437,13 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--config", default=str(ROOT / "training" / "config_train.yaml"))
     ap.add_argument("--limit", type=int, default=None)
-    ap.add_argument("--epochs", type=int, default=None)
+    ap.add_argument("--epochs", type=int, default=None,
+                    help="ABSOLUTE target epoch to train through (overrides cfg epochs), NOT a "
+                         "count of additional epochs to run. The loop is range(start_ep, "
+                         "epochs+1) — with --resume/--warm-start, start_ep is already past 1, "
+                         "so e.g. resuming at epoch 24 needs --epochs 24 (not --epochs 1) to "
+                         "run that epoch; too low silently produces an empty range (zero "
+                         "batches, no error, best dev EER stays inf%%)")
     ap.add_argument("--mode", choices=["frozen", "e2e"], default=None)
     ap.add_argument("--warm-start", type=Path, default=None,
                     help="continue from a serving checkpoint (model + OC-Softmax centre, no "
