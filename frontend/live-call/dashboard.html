@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VoiceGuard — Live Dashboard</title>
+  <link rel="stylesheet" href="static/css/style.css" />
+</head>
+<body>
+  <main class="wrap">
+    <h1>Live Call Monitor</h1>
+    <p>
+      Calls to your protected number are auto-answered and analyzed here in real time.
+      <span id="conn" class="conn">connecting…</span>
+    </p>
+
+    <section id="liveCalls" class="live-calls">
+      <p id="emptyState" class="hint">Waiting for calls — dial your protected number to begin.
+        (Set it up on the <a href="settings.html">Protected Line</a> page.)</p>
+    </section>
+
+    <section>
+      <h2>Call history</h2>
+      <table class="history">
+        <thead>
+          <tr><th>Number</th><th>Time</th><th>Verdict</th><th>Confidence</th></tr>
+        </thead>
+        <tbody id="historyBody">
+          <tr><td colspan="4" class="hint">No calls yet.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <p><a href="index.html">← Back</a> · <a href="settings.html">Protected Line</a></p>
+  </main>
+
+  <!-- Per-call card template -->
+  <template id="callCardTpl">
+    <div class="call-card" data-state="analyzing">
+      <div class="call-head">
+        <span class="call-from"></span>
+        <span class="call-badge">Analyzing…</span>
+      </div>
+      <div class="meter"><div class="meter-fill"></div></div>
+      <div class="call-verdict">Listening…</div>
+    </div>
+  </template>
+
+  <script src="static/js/twilio-dashboard.js"></script>
+</body>
+</html>

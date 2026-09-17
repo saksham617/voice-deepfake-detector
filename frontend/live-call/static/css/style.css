@@ -86,3 +86,34 @@ button.secondary { background: transparent; border: 1px solid var(--none); color
 .msg.ok, .ok { color: var(--low); }
 .msg.err { color: var(--high); }
 .bignum { font-size: 1.6rem; font-weight: 700; letter-spacing: 0.04em; color: var(--accent); margin: 6px 0; }
+
+/* --- live twilio dashboard --- */
+.conn { font-size: 0.8rem; margin-left: 8px; color: var(--muted); }
+.conn.on { color: var(--low); }
+.conn.off { color: var(--medium); }
+.live-calls { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin: 16px 0 28px; }
+.call-card {
+  background: var(--panel); border: 1px solid var(--none); border-radius: 12px;
+  padding: 16px; border-left: 4px solid var(--none); transition: border-color .3s, opacity .5s;
+}
+.call-card[data-state="ok"] { border-left-color: var(--low); }
+.call-card[data-state="flagged"] { border-left-color: var(--high); }
+.call-card[data-state="analyzing"] { border-left-color: var(--accent); }
+.call-card.done { opacity: 0.55; }
+.call-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.call-from { font-weight: 700; font-size: 1.1rem; letter-spacing: 0.02em; }
+.call-badge { font-size: 0.8rem; padding: 3px 8px; border-radius: 999px; background: var(--bg); color: var(--muted); }
+.call-card[data-state="flagged"] .call-badge { background: var(--high); color: #fff; }
+.call-card[data-state="ok"] .call-badge { background: var(--low); color: #06210f; }
+.meter { height: 12px; background: var(--bg); border-radius: 999px; overflow: hidden; margin: 8px 0; }
+.meter-fill {
+  height: 100%; width: 50%; border-radius: 999px; transition: width .6s ease, background .3s;
+  background: linear-gradient(90deg, var(--low), var(--medium) 55%, var(--high));
+}
+.call-verdict { font-size: 0.9rem; color: var(--text); min-height: 1.2em; }
+.call-card[data-state="flagged"] .call-verdict { color: var(--high); font-weight: 600; }
+table.history { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+table.history th, table.history td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--none); }
+table.history th { color: var(--muted); font-weight: 600; }
+.v-fake { color: var(--high); font-weight: 600; }
+.v-real { color: var(--low); font-weight: 600; }
