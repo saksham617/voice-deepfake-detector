@@ -177,7 +177,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from backend.api import legacy_router, rest_router, twilio_router, ws_router  # noqa: E402
+from backend.api import (  # noqa: E402
+    legacy_router,
+    rest_router,
+    twilio_router,
+    twilio_stream_router,
+    ws_router,
+)
 
 app.include_router(legacy_router)
 app.include_router(rest_router, prefix="/live-call")
@@ -185,6 +191,7 @@ app.include_router(ws_router, prefix="/live-call")
 # Twilio routes live at the app root (/twilio/...), not under /live-call, because Twilio's
 # webhook + Media Stream must reach stable public paths (see backend/api/twilio_routes.py).
 app.include_router(twilio_router)
+app.include_router(twilio_stream_router)
 
 if LIVE_CALL_DIR.exists():
     app.mount("/live-call", StaticFiles(directory=str(LIVE_CALL_DIR), html=True), name="live-call")

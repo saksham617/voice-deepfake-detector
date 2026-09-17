@@ -13,8 +13,9 @@ WebSocket. All Twilio REST calls happen server-side here; credentials never reac
 from __future__ import annotations
 
 import logging
+from xml.sax.saxutils import quoteattr
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from backend.telephony import (
@@ -75,3 +76,33 @@ def get_profile() -> dict:
 @router.get("/calls")
 def list_calls(limit: int = 100) -> dict:
     return {"calls": store.list_calls(limit=limit)}
+
+
+@router.post("/voice")
+async def voice_webhook(request: Request) -> Response:
+    """Twilio 'A call comes in' webhook. Returns TwiML that AUTO-ANSWERS the call (no ring,
+    no human pickup) and forks a live Media Stream of the audio to our WebSocket for analysis.
+
+    <Start><Stream> is non-blocking (it copies the audio out-of-band while the call proceeds),
+    so the trailing <Pause> keeps the caller connected — and the audio flowing — while the
+    dashboard analyzes it in real time. Point the number's webhook at <PUBLIC_BASE_URL>/twilio/voice.
+    """
+    form = await request.form()
+    from_number = str(form.get("From", "unknown"))
+    to_number = str(form.get("To", get_telephony_config().phone_number or ""))
+    stream_url = get_telephony_config().stream_wss_url()
+
+    twiml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<Response>"
+        "<Say>Connected to Voice Guard. This call is being analyzed for A I generated voice.</Say>"
+        "<Start>"
+        f"<Stream url={quoteattr(stream_url)}>"
+        f"<Parameter name=\"from\" value={quoteattr(from_number)}/>"
+        f"<Parameter name=\"to\" value={quoteattr(to_number)}/>"
+        "</Stream>"
+        "</Start>"
+        "<Pause length=\"3600\"/>"
+        "</Response>"
+    )
+    return Response(content=twiml, media_type="application/xml")
