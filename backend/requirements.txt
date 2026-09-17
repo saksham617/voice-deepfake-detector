@@ -36,3 +36,8 @@ PyYAML==6.0.3
 # VAD gate ahead of the classifier (backend/audio/vad.py): ships its own small JIT model,
 # no extra runtime beyond torch/torchaudio already above.
 silero-vad==6.2.1
+
+# Live-call phone verification + telephony (backend/telephony/): Twilio Verify (OTP) and
+# Voice/Media-Streams. Imported lazily and only used when TELEPHONY_DEV_MODE=false, so the
+# dev-mock demo path runs without it.
+twilio==9.4.1

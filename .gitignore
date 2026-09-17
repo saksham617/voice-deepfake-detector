@@ -121,3 +121,4 @@ frontend/dist/
 !backend/models/aasist_indicw2v.pt
 .vercel
 .env*
+!.env.example

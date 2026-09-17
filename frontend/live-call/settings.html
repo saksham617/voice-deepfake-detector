@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VoiceGuard — Protected Line</title>
+  <link rel="stylesheet" href="static/css/style.css" />
+</head>
+<body>
+  <main class="wrap">
+    <h1>Your Protected Line</h1>
+    <p>Verify your phone number, then any call to your assigned VoiceGuard number is
+      auto-answered and analyzed in real time.</p>
+
+    <section class="card" style="display:block;max-width:520px">
+      <h2>Phone verification</h2>
+
+      <div id="statusRow" class="hint" style="margin-bottom:12px">Checking status…</div>
+
+      <!-- Step 1: enter number -->
+      <div id="step-phone">
+        <label for="phone">Your phone number (E.164, e.g. +919812345678)</label>
+        <input id="phone" type="tel" placeholder="+919812345678" autocomplete="tel"
+               style="width:100%;padding:10px;margin:8px 0" />
+        <button id="sendBtn" type="button">Send code</button>
+      </div>
+
+      <!-- Step 2: enter OTP -->
+      <div id="step-code" hidden>
+        <label for="code">Enter the 6-digit code</label>
+        <input id="code" inputmode="numeric" maxlength="10" placeholder="123456"
+               style="width:100%;padding:10px;margin:8px 0" />
+        <button id="verifyBtn" type="button">Verify</button>
+        <button id="backBtn" type="button" class="secondary">Change number</button>
+      </div>
+
+      <!-- Verified -->
+      <div id="step-verified" hidden>
+        <p class="ok">✓ Verified: <strong id="verifiedNumber"></strong></p>
+      </div>
+
+      <p id="msg" class="msg" role="status" aria-live="polite"></p>
+      <p id="devHint" class="hint" hidden>Dev-mock mode is on — use code
+        <strong id="devCode">123456</strong> (no real SMS is sent).</p>
+    </section>
+
+    <section class="card" style="display:block;max-width:520px">
+      <h2>Your protected number</h2>
+      <p>For this demo, call this number directly:</p>
+      <p class="bignum" id="protectedNumber">— not configured —</p>
+      <p class="hint">In production this integrates with carrier call-forwarding so your own
+        number is protected automatically; for this demo, call the number above directly.</p>
+    </section>
+
+    <p><a href="index.html">← Back</a> · <a href="dashboard.html">Live dashboard →</a></p>
+  </main>
+  <script src="static/js/settings.js"></script>
+</body>
+</html>

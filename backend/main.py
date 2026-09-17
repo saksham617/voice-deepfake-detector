@@ -146,6 +146,16 @@ async def lifespan(app: FastAPI):
         logger.exception("reports database failed to initialize at startup")
 
     try:
+        from backend.telephony import store as telephony_store
+
+        telephony_store.ensure_db_ready()
+        app.state.telephony_db_ready = True
+        logger.info("telephony database ready at %s", telephony_store.DB_PATH)
+    except Exception:
+        app.state.telephony_db_ready = False
+        logger.exception("telephony database failed to initialize at startup")
+
+    try:
         get_pipeline()  # warm the live-call AASIST + SSL frontend
         get_vad()  # warm the VAD gate (no-op if vad.enabled=false)
         get_webhook()
@@ -167,11 +177,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from backend.api import legacy_router, rest_router, ws_router  # noqa: E402
+from backend.api import legacy_router, rest_router, twilio_router, ws_router  # noqa: E402
 
 app.include_router(legacy_router)
 app.include_router(rest_router, prefix="/live-call")
 app.include_router(ws_router, prefix="/live-call")
+# Twilio routes live at the app root (/twilio/...), not under /live-call, because Twilio's
+# webhook + Media Stream must reach stable public paths (see backend/api/twilio_routes.py).
+app.include_router(twilio_router)
 
 if LIVE_CALL_DIR.exists():
     app.mount("/live-call", StaticFiles(directory=str(LIVE_CALL_DIR), html=True), name="live-call")

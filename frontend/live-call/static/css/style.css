@@ -74,3 +74,15 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   max-height: 180px; overflow-y: auto;
 }
 .log li { padding: 2px 0; border-bottom: 1px solid #232a33; }
+
+/* --- settings/profile + twilio dashboard helpers --- */
+label { display: block; font-size: 0.9rem; color: var(--muted); }
+input {
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--none); border-radius: 8px; font-size: 1rem;
+}
+button.secondary { background: transparent; border: 1px solid var(--none); color: var(--text); }
+.msg { min-height: 1.2em; font-size: 0.9rem; }
+.msg.ok, .ok { color: var(--low); }
+.msg.err { color: var(--high); }
+.bignum { font-size: 1.6rem; font-weight: 700; letter-spacing: 0.04em; color: var(--accent); margin: 6px 0; }
