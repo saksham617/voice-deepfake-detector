@@ -37,7 +37,15 @@ def _device(cfg: dict) -> torch.device:
 
 
 def _balanced_head(samples, n_total):
-    """Deterministic balanced subset: ~n_total/2 per class from the shuffled pool."""
+    """Deterministic balanced subset: ~n_total/2 per class from the shuffled pool.
+
+    Raises if either class is entirely absent from ``samples``. Silently returning a
+    single-class subset here means every epoch's dev EER gets an empty score list for the
+    missing class, ``compute_eer`` returns ``nan``, and ``nan < best`` is always False --
+    training finishes with "best dev EER inf%" and no traceback at all, having never once
+    saved a checkpoint. Fail loudly instead, right where the actual problem is (the source
+    manifest), not several silent steps downstream.
+    """
     import random
 
     rng = random.Random(0)
@@ -45,6 +53,13 @@ def _balanced_head(samples, n_total):
     out = []
     for lab in (0, 1):
         pool = [s for s in samples if s.label == lab]
+        if not pool:
+            raise ValueError(
+                f"_balanced_head: no samples with label={lab} among {len(samples)} rows -- "
+                "can't build a balanced subset. The source manifest is missing a class "
+                "(check prepare_manifests.py output / which datasets got attached), not a "
+                "subsampling bug."
+            )
         rng.shuffle(pool)
         out += pool[:per]
     rng.shuffle(out)

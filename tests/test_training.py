@@ -1,7 +1,10 @@
 """Offline end-to-end training smoke: synthetic audio -> dummy SSL cache -> AASIST head
 trains -> checkpoint round-trips into the live classifier."""
 
+from dataclasses import dataclass
+
 import numpy as np
+import pytest
 import soundfile as sf
 import torch
 
@@ -9,7 +12,7 @@ from backend.inference.classifier import AASISTClassifier
 from training.dataset import FeatureDataset, collate_features
 from training.features import build_cache
 from training.losses import WeightedCE
-from training.train import evaluate_dev, train_one_epoch
+from training.train import _balanced_head, evaluate_dev, train_one_epoch
 
 
 def _make_dataset(tmp_path, n=24):
@@ -118,3 +121,44 @@ def test_oc_softmax_path_runs(tmp_path):
     train_one_epoch(model, loss_fn, dl, opt, torch.device("cpu"))
     eer, n = evaluate_dev(model, loss_fn, dl, torch.device("cpu"))
     assert n == 16 and 0.0 <= eer <= 1.0
+
+
+# ---- _balanced_head: regression for a real silent-failure investigation. A training run
+# finished an epoch with no batch loss printed and "best dev EER inf%", no traceback --
+# traced to `compute_eer` returning nan when a class is missing from the dev subset, and
+# `nan < best` always being False so `best` (init float('inf')) never updates. Confirmed
+# _balanced_head itself already stratifies by label before truncating (not naive head/slice
+# truncation -- manifest ordering alone can't cause this); the actual gap was that a source
+# manifest missing a class entirely produced a single-class subset with zero warning.
+
+@dataclass
+class _FakeSample:
+    label: int
+
+
+def test_balanced_head_stratifies_regardless_of_manifest_order():
+    # realistic ASVspoof2019 LA dev class ratio (~1 bonafide : 11 spoof), fully ordered by
+    # class both ways -- as a straight concatenation-by-dataset manifest builder would produce
+    spoof_first = [_FakeSample(1) for _ in range(2229)] + [_FakeSample(0) for _ in range(254)]
+    bona_first = [_FakeSample(0) for _ in range(254)] + [_FakeSample(1) for _ in range(2229)]
+    for samples in (spoof_first, bona_first):
+        out = _balanced_head(samples, 300)
+        labels = [s.label for s in out]
+        assert labels.count(0) == 150
+        assert labels.count(1) == 150
+
+
+def test_balanced_head_degrades_gracefully_when_source_smaller_than_requested():
+    samples = [_FakeSample(1) for _ in range(50)] + [_FakeSample(0) for _ in range(3)]
+    out = _balanced_head(samples, 3000)
+    labels = [s.label for s in out]
+    assert labels.count(0) == 3   # all 3 available bonafide, not zero
+    assert labels.count(1) == 50
+
+
+@pytest.mark.parametrize("missing_label", [0, 1])
+def test_balanced_head_raises_loudly_when_a_class_is_missing(missing_label):
+    present_label = 1 - missing_label
+    samples = [_FakeSample(present_label) for _ in range(500)]
+    with pytest.raises(ValueError, match=f"label={missing_label}"):
+        _balanced_head(samples, 300)
