@@ -102,7 +102,7 @@ class ManifestDataset(Dataset):
             wav = resample_to_16k(np.asarray(wav), sr)
         wav = self._crop_or_pad(np.asarray(wav, dtype="float32"))
         if self.train and self.augment is not None:
-            wav = np.asarray(self.augment(wav), dtype="float32")
+            wav = np.asarray(self.augment(wav, s.label), dtype="float32")
             wav = self._crop_or_pad(wav)  # augment may change length
         return torch.from_numpy(np.ascontiguousarray(wav)), s.label, s.utt_id
 

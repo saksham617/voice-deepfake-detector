@@ -104,7 +104,7 @@ class RawBoost:
         self.p = p
         self.rng = np.random.default_rng(seed)
 
-    def __call__(self, wav: np.ndarray) -> np.ndarray:
+    def __call__(self, wav: np.ndarray, label: int | None = None) -> np.ndarray:
         if self.mode == 0 or self.rng.random() > self.p:
             return wav.astype(np.float32)
         x = wav.astype(np.float32)

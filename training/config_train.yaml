@@ -48,6 +48,12 @@ augment:
                                 # which has no real-world ambient noise / room reverb model.
   environmental_mode: both     # noise | reverb | both
   environmental_p: 0.5
+  # Real-world eval showed the model shortcuts on "genuine room/line noise -> bonafide": the
+  # merged real-world bonafide data is *always* authentically channel-degraded, while spoof
+  # only draws this augmentation at the base rate below, so channel character alone became a
+  # usable (wrong) cue. p_spoof pushes spoof's draw rate above bonafide's to break that
+  # correlation; leave unset (None) to fall back to environmental_p for every label.
+  environmental_p_spoof: 0.75
   environmental_snr_min_db: 0
   environmental_snr_max_db: 20
   # Kaggle-input paths (this notebook's attached Datasets) — switch back to the
@@ -62,6 +68,13 @@ augment:
                                 # environmental) so the model can't shortcut on "degraded
                                 # audio = fake" — see training/augment_telephone.py.
   telephone_p: 0.45
+  # Same rationale as environmental_p_spoof above: ep5/ep6 real-world eval showed the model
+  # learned "sounds like a real phone channel -> bonafide" (ai_replayed, the most authentically
+  # phone-channel spoof domain, had the WORST accuracy of all four domains: 0%). All merged
+  # real-world bonafide rows are genuine call recordings; spoof only gets this augmentation at
+  # the base rate. Starting moderate (not 1.0) per the plan to raise it further if this helps
+  # without hurting bonafide accuracy — check eval's real_phone/real_laptop rows each epoch.
+  telephone_p_spoof: 0.75
   telephone_low_hz: 300
   telephone_high_hz: 3400
   telephone_snr_min_db: 15

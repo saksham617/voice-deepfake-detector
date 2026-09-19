@@ -174,16 +174,17 @@ def _run_frozen(cfg, device, args) -> float:
 
 
 def _compose_augment(*fns):
-    """Chain waveform augmenters into one callable(np.ndarray)->np.ndarray for
-    ManifestDataset's single ``augment`` slot. Each fn gates itself (own probability), so a
+    """Chain waveform augmenters into one callable(np.ndarray, label)->np.ndarray for
+    ManifestDataset's single ``augment`` slot. Each fn gates itself (own probability, optionally
+    label-conditional — see TelephoneChannelAugment/EnvironmentalAugment's p_spoof), so a
     sample can draw any subset of them independently."""
     fns = [f for f in fns if f is not None]
     if not fns:
         return None
 
-    def _apply(wav):
+    def _apply(wav, label=None):
         for f in fns:
-            wav = f(wav)
+            wav = f(wav, label)
         return wav
 
     return _apply
@@ -207,11 +208,13 @@ def _run_e2e(cfg, device, args) -> float:
     if aug.get("environmental"):
         from training.augment_environmental import EnvironmentalAugment
 
+        env_p_spoof = aug.get("environmental_p_spoof")
         env = EnvironmentalAugment(
             musan_dir=aug.get("musan_dir"),
             rir_dir=aug.get("rir_dir"),
             mode=aug.get("environmental_mode", "both"),
             p=float(aug.get("environmental_p", 0.5)),
+            p_spoof=float(env_p_spoof) if env_p_spoof is not None else None,
             snr_min_db=float(aug.get("environmental_snr_min_db", 0.0)),
             snr_max_db=float(aug.get("environmental_snr_max_db", 20.0)),
         )
@@ -220,10 +223,12 @@ def _run_e2e(cfg, device, args) -> float:
     if aug.get("telephone"):
         from training.augment_telephone import TelephoneChannelAugment
 
+        tel_p_spoof = aug.get("telephone_p_spoof")
         tel = TelephoneChannelAugment(
             low_hz=float(aug.get("telephone_low_hz", 300.0)),
             high_hz=float(aug.get("telephone_high_hz", 3400.0)),
             p=float(aug.get("telephone_p", 0.45)),
+            p_spoof=float(tel_p_spoof) if tel_p_spoof is not None else None,
             snr_min_db=float(aug.get("telephone_snr_min_db", 15.0)),
             snr_max_db=float(aug.get("telephone_snr_max_db", 35.0)),
         )

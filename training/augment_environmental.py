@@ -81,6 +81,7 @@ class EnvironmentalAugment:
         rir_dir: str | Path | None = None,
         mode: str = "both",
         p: float = 0.5,
+        p_spoof: float | None = None,
         snr_min_db: float = 0.0,
         snr_max_db: float = 20.0,
         seed: int | None = None,
@@ -89,6 +90,7 @@ class EnvironmentalAugment:
             raise ValueError(f"mode must be noise|reverb|both, got {mode!r}")
         self.mode = mode
         self.p = p
+        self.p_spoof = p_spoof
         self.snr_min_db = snr_min_db
         self.snr_max_db = snr_max_db
         self.rng = np.random.default_rng(seed)
@@ -136,8 +138,9 @@ class EnvironmentalAugment:
         rms_wet = np.sqrt(np.mean(wet**2)) + 1e-9
         return wet * (rms_dry / rms_wet)
 
-    def __call__(self, wav: np.ndarray) -> np.ndarray:
-        if self.rng.random() > self.p:
+    def __call__(self, wav: np.ndarray, label: int | None = None) -> np.ndarray:
+        p = self.p_spoof if (self.p_spoof is not None and label == 1) else self.p
+        if self.rng.random() > p:
             return wav.astype(np.float32)
         x = wav.astype(np.float32)
         want_noise = self.mode in ("noise", "both") and bool(self._noise_files)

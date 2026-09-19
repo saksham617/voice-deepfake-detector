@@ -90,6 +90,7 @@ class TelephoneChannelAugment:
         fs: int = 16000,
         codec_bits: int = 8,
         p: float = 0.45,
+        p_spoof: float | None = None,
         snr_min_db: float = 15.0,
         snr_max_db: float = 35.0,
         seed: int | None = None,
@@ -99,6 +100,7 @@ class TelephoneChannelAugment:
         self.fs = fs
         self.codec_bits = codec_bits
         self.p = p
+        self.p_spoof = p_spoof
         self.snr_min_db = snr_min_db
         self.snr_max_db = snr_max_db
         self.rng = np.random.default_rng(seed)
@@ -114,12 +116,13 @@ class TelephoneChannelAugment:
         scale = np.sqrt(ps / (pn * (10 ** (snr_db / 10.0))))
         return x + noise * np.float32(scale)
 
-    def __call__(self, wav: np.ndarray) -> np.ndarray:
+    def __call__(self, wav: np.ndarray, label: int | None = None) -> np.ndarray:
         # degenerate input (empty clip, or non-finite from an upstream decode error) — skip
         # rather than let sosfilt/the codec math choke on it.
         if wav.size == 0 or not np.all(np.isfinite(wav)):
             return wav.astype(np.float32)
-        if self.rng.random() > self.p:
+        p = self.p_spoof if (self.p_spoof is not None and label == 1) else self.p
+        if self.rng.random() > p:
             return wav.astype(np.float32)
         x = wav.astype(np.float32)
         x = sosfilt(self._sos, x).astype(np.float32)
