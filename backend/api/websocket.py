@@ -29,6 +29,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
+import time
 import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -37,6 +39,7 @@ from backend.audio import AudioChunker
 from backend.core import get_config
 
 router = APIRouter()
+logger = logging.getLogger("backend")
 
 # A client that vanishes mid-send (tab closed, network drop) can surface as
 # WebSocketDisconnect on receive, but as OSError/RuntimeError from the ASGI server on send
@@ -103,11 +106,15 @@ async def stream(ws: WebSocket) -> None:
     # lazy import so Day 1/2 work before the pipeline is ready
     from backend.main import get_pipeline, get_vad, get_webhook
     from backend.scoring import RiskEngine
+    from backend.scoring.session_report import SessionRiskAccumulator
 
     pipeline = get_pipeline()
     vad = get_vad()  # None if vad.enabled=false in config
     risk = RiskEngine.from_config(cfg.risk)
     webhook = get_webhook()
+    # Accumulates this session's per-window risk so we can auto-log one report when it ends.
+    acc = SessionRiskAccumulator()
+    session_start = time.monotonic()
 
     chunker = AudioChunker(
         sample_rate=cfg.audio.sample_rate,
@@ -176,6 +183,7 @@ async def stream(ws: WebSocket) -> None:
                 await ws.send_json({"type": "vad_skip", "index": window_index, "dropped": dropped})
                 continue
             state = risk.update(result.fake_prob)
+            acc.add(state)
 
             await ws.send_json(
                 {
@@ -217,3 +225,27 @@ async def stream(ws: WebSocket) -> None:
             await recv_task
         with contextlib.suppress(*_DISCONNECT_ERRORS):
             await ws.close()
+        # Auto-log one report for the finished session (skipped if nothing was ever scored).
+        # Runs regardless of how the session ended (client 'end', disconnect, or error), and a
+        # DB failure here must never surface as a WS error — the socket is already closed.
+        await _log_session_report(acc, time.monotonic() - session_start, session_id)
+
+
+async def _log_session_report(
+    acc, duration_seconds: float, session_id: str, phone_number: str | None = None
+) -> None:
+    """Persist a report for a completed live-call session. phone_number is None for now —
+    /ws/stream carries no caller ID (see reporting.create_report's docstring)."""
+    kwargs = acc.to_report_kwargs(duration_seconds, phone_number=phone_number)
+    if kwargs is None:
+        return  # no scored windows -> no meaningful report
+    try:
+        from src.models import reporting
+
+        report = await asyncio.to_thread(reporting.create_report, **kwargs)
+        logger.info(
+            "live-call session %s logged as report %s (%s, conf=%.2f)",
+            session_id, report["id"], report["verdict"], report["confidence_score"],
+        )
+    except Exception:
+        logger.exception("failed to auto-log report for session %s", session_id)
