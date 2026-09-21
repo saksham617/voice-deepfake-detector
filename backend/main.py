@@ -107,6 +107,23 @@ def get_webhook():
     return _webhook
 
 
+_transcription_engine = None
+_te_loaded = _VAD_UNSET
+
+
+def get_transcription_engine():
+    """App-scoped transcription engine singleton (loads any local ASR model once, not per
+    WebSocket). Returns None when transcription is disabled or resolves to no engine."""
+    global _transcription_engine, _te_loaded
+    if _te_loaded is _VAD_UNSET:
+        from backend.audio import build_engine
+
+        cfg = get_config().transcription
+        _transcription_engine = build_engine(cfg)
+        _te_loaded = True
+    return _transcription_engine
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load every model once at startup so /health reflects real readiness
@@ -149,6 +166,8 @@ async def lifespan(app: FastAPI):
         get_pipeline()  # warm the live-call AASIST + SSL frontend
         get_vad()  # warm the VAD gate (no-op if vad.enabled=false)
         get_webhook()
+        engine = get_transcription_engine()  # warm ASR (loads a local model once, if any)
+        logger.info("transcription engine: %s", getattr(engine, "name", "disabled"))
         app.state.live_call_ready = True
         logger.info("live-call detection pipeline loaded successfully")
     except Exception:

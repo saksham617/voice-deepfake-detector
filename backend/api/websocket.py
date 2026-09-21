@@ -41,6 +41,11 @@ from backend.core import get_config
 router = APIRouter()
 logger = logging.getLogger("backend")
 
+# Full-call transcripts, kept in memory keyed by session_id so they're available at session end
+# (e.g. to attach to a report later — NOT wired into reporting here, that's a separate track).
+SESSION_TRANSCRIPTS: dict[str, str] = {}
+_MAX_TRANSCRIPTS = 50
+
 # A client that vanishes mid-send (tab closed, network drop) can surface as
 # WebSocketDisconnect on receive, but as OSError/RuntimeError from the ASGI server on send
 # (e.g. uvicorn's ClientDisconnected, a subclass of OSError). Treat both as a plain disconnect.
@@ -124,6 +129,30 @@ async def stream(ws: WebSocket) -> None:
         pcm_format=cfg.audio.pcm_format,
     )
 
+    # Transcription: an INDEPENDENT, never-drop path. It taps the raw resampled stream (every
+    # sample once, via chunker.add_tap) into its own buffer, and a separate task transcribes
+    # non-overlapping segments off the event loop — so it can lag the risk score but never
+    # drops audio and never blocks the receive loop. See backend/audio/transcriber.py.
+    from backend.audio import StreamingTranscriber
+    from backend.main import get_transcription_engine
+
+    transcriber = None
+    transcript_ready = asyncio.Event()
+    _engine = get_transcription_engine()
+    if _engine is not None and cfg.transcription.enabled:
+        transcriber = StreamingTranscriber(
+            _engine,
+            segment_seconds=cfg.transcription.segment_seconds,
+            language=cfg.transcription.language,
+            sample_rate=cfg.audio.sample_rate,
+        )
+
+        def _feed_transcription(wav) -> None:
+            transcriber.feed(wav)
+            transcript_ready.set()
+
+        chunker.add_tap(_feed_transcription)
+
     # shared state between the receiver task and the inference loop
     pending: dict = {"window": None, "dropped": 0}
     got_window = asyncio.Event()
@@ -156,9 +185,39 @@ async def stream(ws: WebSocket) -> None:
         finally:
             stop.set()
             got_window.set()  # wake the inference loop so it can exit
+            transcript_ready.set()  # wake the transcription loop so it can drain + exit
+
+    async def transcription_loop() -> None:
+        """Consume non-overlapping segments in order and emit transcript messages. Never drops
+        audio; runs ASR off the loop via to_thread so it can't block risk scoring."""
+        if transcriber is None:
+            return
+        try:
+            while True:
+                if not transcriber.has_segment():
+                    if stop.is_set():
+                        break
+                    await transcript_ready.wait()
+                    transcript_ready.clear()
+                    continue
+                seg = transcriber.take_segment()
+                try:
+                    text = await asyncio.to_thread(transcriber.transcribe_segment, seg)
+                except Exception:  # noqa: BLE001 — one bad segment must not kill the transcript
+                    logger.exception("transcription failed for a segment (session %s)", session_id)
+                    continue
+                await _emit_transcript(ws, transcriber, transcriber.record(text))
+        finally:
+            # Flush the end-of-call remainder so the last words aren't lost.
+            tail = transcriber.take_tail()
+            if tail is not None:
+                with contextlib.suppress(Exception):
+                    text = await asyncio.to_thread(transcriber.transcribe_segment, tail)
+                    await _emit_transcript(ws, transcriber, transcriber.record(text))
 
     await ws.send_json({"type": "ready", "session_id": session_id})
     recv_task = asyncio.create_task(receiver())
+    trans_task = asyncio.create_task(transcription_loop())
     window_index = 0  # every window seen, scored or VAD-skipped
 
     try:
@@ -220,15 +279,51 @@ async def stream(ws: WebSocket) -> None:
         pass
     finally:
         stop.set()
+        transcript_ready.set()
         recv_task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await recv_task
+        # Let transcription drain its remaining segments + end-of-call tail before we close,
+        # but bound it so a slow/hung ASR call can't hang the teardown.
+        try:
+            await asyncio.wait_for(trans_task, timeout=20.0)
+        except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+            trans_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await trans_task
+        if transcriber is not None and transcriber.full_text:
+            _store_transcript(session_id, transcriber.full_text)
         with contextlib.suppress(*_DISCONNECT_ERRORS):
             await ws.close()
         # Auto-log one report for the finished session (skipped if nothing was ever scored).
         # Runs regardless of how the session ended (client 'end', disconnect, or error), and a
         # DB failure here must never surface as a WS error — the socket is already closed.
         await _log_session_report(acc, time.monotonic() - session_start, session_id)
+
+
+async def _emit_transcript(ws: WebSocket, transcriber, text: str) -> None:
+    """Send a transcript update (distinct message type from score/vad_skip/ready). No-op for
+    empty text (e.g. a silent segment ASR returned nothing for)."""
+    if not text:
+        return
+    with contextlib.suppress(*_DISCONNECT_ERRORS):
+        await ws.send_json(
+            {
+                "type": "transcript",
+                "text": text,  # the latest segment
+                "session_running_text": transcriber.full_text,  # everything so far
+            }
+        )
+
+
+def _store_transcript(session_id: str, full_text: str) -> None:
+    """Keep the full-call transcript in memory (capped) for retrieval at/after session end."""
+    SESSION_TRANSCRIPTS[session_id] = full_text
+    if len(SESSION_TRANSCRIPTS) > _MAX_TRANSCRIPTS:
+        oldest = next(iter(SESSION_TRANSCRIPTS))
+        SESSION_TRANSCRIPTS.pop(oldest, None)
+    logger.info("session %s transcript (%d chars): %s",
+                session_id, len(full_text), full_text[:200])
 
 
 async def _log_session_report(
