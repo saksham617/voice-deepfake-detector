@@ -99,6 +99,21 @@ class ServerConfig:
 
 
 @dataclass
+class TranscriptionConfig:
+    # Live call transcription (backend/audio/transcriber.py). Runs on its OWN never-drop path
+    # alongside — never inside — the risk-scoring loop, so it can lag without dropping audio.
+    enabled: bool = True
+    # auto | cloud | local | stub | off.  "auto" = cloud if a STT_API_KEY is set, else local
+    # if faster-whisper is installed, else stub. The chosen production engine is cloud.
+    engine: str = "auto"
+    segment_seconds: float = 5.0    # non-overlapping audio per ASR call (accuracy vs latency)
+    language: str = "auto"          # auto (detect) | en | hi | ... — multilingual by default
+    cloud_provider: str = "deepgram"  # deepgram (implemented) | google (adapter TBD)
+    cloud_model: str = "nova-2"     # provider model id
+    local_model: str = "base"       # faster-whisper size when engine=local
+
+
+@dataclass
 class Config:
     audio: AudioConfig
     feature_extractor: FeatureExtractorConfig
@@ -107,6 +122,7 @@ class Config:
     webhook: WebhookConfig
     server: ServerConfig
     vad: VADConfig = field(default_factory=VADConfig)
+    transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "Config":
@@ -118,6 +134,7 @@ class Config:
             webhook=WebhookConfig(**raw.get("webhook", {})),
             server=ServerConfig(**raw.get("server", {})),
             vad=VADConfig(**raw.get("vad", {})),
+            transcription=TranscriptionConfig(**raw.get("transcription", {})),
         )
 
 

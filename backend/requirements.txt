@@ -36,3 +36,9 @@ PyYAML==6.0.3
 # VAD gate ahead of the classifier (backend/audio/vad.py): ships its own small JIT model,
 # no extra runtime beyond torch/torchaudio already above.
 silero-vad==6.2.1
+
+# OPTIONAL: local ASR engine for live transcription (backend/audio/transcriber.py, engine=local).
+# The chosen production engine is cloud STT (Deepgram) which uses stdlib urllib (no dep). This
+# is only for offline/demo use or verifying transcription without a cloud key. CPU by default
+# (set VG_WHISPER_DEVICE=cuda where system cuBLAS is installed).
+# faster-whisper==1.2.1

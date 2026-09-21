@@ -38,6 +38,19 @@ vad:
   frame_threshold: 0.5        # per 32 ms frame, Silero's own speech-probability cutoff
   min_speech_ratio: 0.2       # fraction of a window's frames that must be speech to score it
 
+transcription:
+  # Live-call transcription (backend/audio/transcriber.py). Runs on its own never-drop path,
+  # separate from the overlapping/drop-oldest risk-scoring loop, so it can lag but never skips
+  # audio. Emits {"type":"transcript", ...} WS messages, distinct from "score".
+  enabled: true
+  engine: auto                # auto | cloud | local | stub | off  (auto: cloud if key set,
+                              # else local if faster-whisper installed, else stub)
+  segment_seconds: 5.0        # non-overlapping audio per ASR call
+  language: auto              # auto (detect) | en | hi | ...  — multilingual by default
+  cloud_provider: deepgram    # deepgram (implemented) | google (adapter TBD)
+  cloud_model: nova-2         # Deepgram model; nova-2 supports Indian languages + detection
+  local_model: base           # faster-whisper size for the offline/test engine
+
 risk:
   window: 10                  # rolling window size (chunks)
   weighting: linear           # linear | exponential | uniform

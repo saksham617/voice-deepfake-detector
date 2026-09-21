@@ -12,7 +12,7 @@ Day 2 scope: PCM decode, resample, ring buffer, overlap. Day 5 wires this into t
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import numpy as np
 import torch
@@ -64,10 +64,20 @@ class AudioChunker:
         self.chunk_samples = int(sample_rate * chunk_seconds)
         self.hop_samples = int(sample_rate * hop_seconds)
         self._buf = np.zeros(0, dtype=np.float32)
+        self._taps: list[Callable[[np.ndarray], None]] = []
+
+    def add_tap(self, callback: Callable[[np.ndarray], None]) -> None:
+        """Register a callback that receives the freshly decoded+resampled audio of EVERY
+        push, exactly once, in order — before the overlapping-window buffering below. This is
+        how transcription taps the raw stream without going through the drop-oldest window
+        path (which is correct for risk scoring but would lose words for a transcript)."""
+        self._taps.append(callback)
 
     def push(self, data: bytes | np.ndarray) -> Iterator[torch.Tensor]:
         wav = decode_pcm(data, self.pcm_format)
         wav = resample_to_16k(wav, self.input_sample_rate)
+        for tap in self._taps:
+            tap(wav)
         self._buf = np.concatenate([self._buf, wav])
         while self._buf.shape[0] >= self.chunk_samples:
             window = self._buf[: self.chunk_samples].copy()
