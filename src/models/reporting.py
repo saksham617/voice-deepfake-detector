@@ -30,6 +30,9 @@ DB_PATH = _PROJECT_ROOT / "data" / "processed" / "reports.db"
 
 REPORT_TYPES = {"voice", "message", "speaker_verification"}
 VERDICTS = {"spoof", "bonafide", "suspicious", "safe"}
+# Review workflow states shown in the frontend Reports table. New reports start "open".
+STATUSES = {"open", "reviewed", "dismissed"}
+DEFAULT_STATUS = "open"
 
 # Module-level flag so CREATE TABLE IF NOT EXISTS only runs once per process
 # -- mirrors the _cached_model lazy-init pattern in speaker_verification.py,
@@ -76,14 +79,26 @@ def ensure_db_ready() -> None:
                 verdict TEXT NOT NULL,
                 confidence_score REAL NOT NULL,
                 claimed_identity TEXT,
-                user_notes TEXT
+                user_notes TEXT,
+                phone_number TEXT,
+                status TEXT NOT NULL DEFAULT 'open'
             )
             """
         )
+        # Migrate a pre-existing reports.db created before phone_number/status existed:
+        # CREATE TABLE IF NOT EXISTS won't add columns to an already-present table, so add
+        # any missing column in place (idempotent, preserves existing rows).
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(reports)")}
+        if "phone_number" not in existing:
+            conn.execute("ALTER TABLE reports ADD COLUMN phone_number TEXT")
+        if "status" not in existing:
+            conn.execute("ALTER TABLE reports ADD COLUMN status TEXT NOT NULL DEFAULT 'open'")
     _db_ready = True
 
 
-def _validate_report_fields(report_type: str, verdict: str, confidence_score: float) -> None:
+def _validate_report_fields(
+    report_type: str, verdict: str, confidence_score: float, status: str = DEFAULT_STATUS
+) -> None:
     if report_type not in REPORT_TYPES:
         raise InvalidReportError(
             f"Invalid type '{report_type}'. Must be one of: {sorted(REPORT_TYPES)}"
@@ -94,6 +109,8 @@ def _validate_report_fields(report_type: str, verdict: str, confidence_score: fl
         raise InvalidReportError(f"confidence_score must be a number, got {confidence_score!r}")
     if not (0.0 <= confidence_score <= 1.0):
         raise InvalidReportError(f"confidence_score must be between 0 and 1, got {confidence_score}")
+    if status not in STATUSES:
+        raise InvalidReportError(f"Invalid status '{status}'. Must be one of: {sorted(STATUSES)}")
 
 
 def create_report(
@@ -102,24 +119,33 @@ def create_report(
     confidence_score: float,
     claimed_identity: str | None = None,
     user_notes: str | None = None,
+    phone_number: str | None = None,
+    status: str = DEFAULT_STATUS,
 ) -> dict:
     """Validate and insert a new report. Returns the stored report (including
     its assigned id and server-set timestamp) as a dict.
 
-    Raises InvalidReportError if report_type/verdict aren't in the allowed
+    ``phone_number`` is optional caller/contact metadata (the live-call WS has no
+    caller ID today, so auto-created call reports leave it None); ``status`` is the
+    review-workflow state, defaulting to "open".
+
+    Raises InvalidReportError if report_type/verdict/status aren't in the allowed
     sets above, or confidence_score isn't in [0, 1].
     """
-    _validate_report_fields(report_type, verdict, confidence_score)
+    _validate_report_fields(report_type, verdict, confidence_score, status)
     ensure_db_ready()
 
     timestamp = datetime.now(timezone.utc).isoformat()
     with _connect() as conn:
         cursor = conn.execute(
             """
-            INSERT INTO reports (timestamp, type, verdict, confidence_score, claimed_identity, user_notes)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO reports
+                (timestamp, type, verdict, confidence_score, claimed_identity,
+                 user_notes, phone_number, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (timestamp, report_type, verdict, confidence_score, claimed_identity, user_notes),
+            (timestamp, report_type, verdict, confidence_score, claimed_identity,
+             user_notes, phone_number, status),
         )
         report_id = cursor.lastrowid
 

@@ -108,3 +108,25 @@ def test_delete_report_removes_it_and_subsequent_get_raises():
 def test_delete_report_raises_for_missing_id():
     with pytest.raises(reporting.ReportNotFoundError):
         reporting.delete_report(99999)
+
+
+def test_create_report_stores_phone_number_and_status():
+    report = reporting.create_report(
+        report_type="voice", verdict="spoof", confidence_score=0.8,
+        phone_number="+91 98200 12345", status="reviewed",
+    )
+    assert report["phone_number"] == "+91 98200 12345"
+    assert report["status"] == "reviewed"
+
+
+def test_status_defaults_to_open_and_phone_number_optional():
+    report = reporting.create_report(report_type="voice", verdict="bonafide", confidence_score=0.1)
+    assert report["status"] == "open"
+    assert report["phone_number"] is None
+
+
+def test_create_report_rejects_invalid_status():
+    with pytest.raises(reporting.InvalidReportError):
+        reporting.create_report(
+            report_type="voice", verdict="spoof", confidence_score=0.5, status="banana"
+        )

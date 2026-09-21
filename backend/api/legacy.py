@@ -99,6 +99,8 @@ class ReportCreateRequest(BaseModel):
     confidence_score: float
     claimed_identity: str | None = None
     user_notes: str | None = None
+    phone_number: str | None = None
+    status: str = "open"
 
 
 class ReportResponse(BaseModel):
@@ -109,6 +111,8 @@ class ReportResponse(BaseModel):
     confidence_score: float
     claimed_identity: str | None = None
     user_notes: str | None = None
+    phone_number: str | None = None
+    status: str = "open"
 
 
 @router.get("/health")
@@ -290,6 +294,8 @@ def create_report(payload: ReportCreateRequest) -> ReportResponse:
             confidence_score=payload.confidence_score,
             claimed_identity=payload.claimed_identity,
             user_notes=payload.user_notes,
+            phone_number=payload.phone_number,
+            status=payload.status,
         )
     except reporting.InvalidReportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
