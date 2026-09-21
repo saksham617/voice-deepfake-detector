@@ -33,6 +33,9 @@ export const ENROLL_SPEAKER_PATH = "/enroll_speaker";
 /** Speaker voiceprint verification endpoint path. */
 export const VERIFY_SPEAKER_PATH = "/verify_speaker";
 
+/** Reports list/delete endpoint path (unprefixed, matching legacy.py's app-root contract). */
+export const REPORTS_PATH = "/reports";
+
 /**
  * Audio formats the UI accepts. Kept in sync with what the backend supports.
  * Update this list when the backend's supported formats are confirmed.

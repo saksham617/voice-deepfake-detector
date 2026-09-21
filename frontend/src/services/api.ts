@@ -13,9 +13,14 @@ import {
   ENROLL_SPEAKER_PATH,
   MESSAGE_CHECK_PATH,
   PREDICT_PATH,
+  REPORTS_PATH,
   USE_MOCK,
   VERIFY_SPEAKER_PATH,
 } from "../config";
+import {
+  isBackendReportArray,
+  type BackendReport,
+} from "../types/report";
 import {
   isMessageCheckResponse,
   type MessageCheckResponse,
@@ -318,6 +323,57 @@ async function realVerifySpeaker(
   return data;
 }
 
+// --------------------------------------------------------------------------- reports
+
+/** Fetch all reports (GET /reports), most-recent first. */
+export async function fetchReports(signal?: AbortSignal): Promise<BackendReport[]> {
+  if (USE_MOCK) return mockFetchReports(signal);
+  return realFetchReports(signal);
+}
+
+/** Delete one report by id (DELETE /reports/{id}). */
+export async function deleteReport(id: number, signal?: AbortSignal): Promise<void> {
+  if (USE_MOCK) return mockDeleteReport(id, signal);
+  return realDeleteReport(id, signal);
+}
+
+async function realFetchReports(signal?: AbortSignal): Promise<BackendReport[]> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${REPORTS_PATH}`, { signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new ApiError("network", "Could not reach the server to load reports.");
+  }
+  if (!response.ok) {
+    throw new ApiError("server", `The server returned an error loading reports (${response.status}).`);
+  }
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    throw new ApiError("invalid_response", "The server sent a response we couldn't read.");
+  }
+  if (!isBackendReportArray(data)) {
+    throw new ApiError("invalid_response", "The server sent reports in an unexpected shape.");
+  }
+  return data;
+}
+
+async function realDeleteReport(id: number, signal?: AbortSignal): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${REPORTS_PATH}/${id}`, { method: "DELETE", signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new ApiError("network", "Could not reach the server to delete the report.");
+  }
+  // 404 = already gone; treat as success so the row leaves the UI either way.
+  if (!response.ok && response.status !== 404) {
+    throw new ApiError("server", `The server returned an error deleting the report (${response.status}).`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Mock backend (development only)
 //
@@ -427,6 +483,37 @@ async function mockVerifySpeaker(
     : Number((0.2 + (seed % 30) / 100).toFixed(2));
 
   return { match, similarity };
+}
+
+// TODO(remove-when-backend-ready): sample reports for USE_MOCK mode. A module-level array so
+// mock deletes persist within a session (until reload), mirroring real backend behaviour.
+let mockReportsStore: BackendReport[] = [
+  {
+    id: 1, timestamp: "2026-09-20T09:12:00.000Z", type: "voice", verdict: "spoof",
+    confidence_score: 0.93, claimed_identity: "Bank representative", phone_number: "+1 202-555-0143",
+    user_notes: "Live call: 42s, 11 windows scored, peak HIGH. Windows per level: LOW:2  MEDIUM:3  HIGH:6.",
+    status: "open",
+  },
+  {
+    id: 2, timestamp: "2026-09-19T18:40:00.000Z", type: "message", verdict: "suspicious",
+    confidence_score: 0.71, claimed_identity: null, phone_number: "+1 202-555-0143",
+    user_notes: "SMS phishing link disguised as a bank verification request.", status: "reviewed",
+  },
+  {
+    id: 3, timestamp: "2026-09-18T11:05:00.000Z", type: "voice", verdict: "bonafide",
+    confidence_score: 0.12, claimed_identity: null, phone_number: null,
+    user_notes: "Live call: 30s, 8 windows scored, peak NONE. Windows per level: NONE:8.", status: "reviewed",
+  },
+];
+
+async function mockFetchReports(signal?: AbortSignal): Promise<BackendReport[]> {
+  await delay(500, signal);
+  return mockReportsStore.slice();
+}
+
+async function mockDeleteReport(id: number, signal?: AbortSignal): Promise<void> {
+  await delay(300, signal);
+  mockReportsStore = mockReportsStore.filter((r) => r.id !== id);
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
