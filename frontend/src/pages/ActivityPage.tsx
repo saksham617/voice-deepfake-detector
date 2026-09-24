@@ -1,30 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ContactsIcon, MessageIcon, WaveIcon } from "../components/icons";
-
-type ActivityKind = "voice" | "message" | "contact";
-type ActivityTier = "safe" | "medium" | "high";
-
-interface ActivityItem {
-  id: string;
-  kind: ActivityKind;
-  title: string;
-  detail: string;
-  tier: ActivityTier;
-  timestamp: string;
-}
-
-// TODO(remove-when-backend-ready): replace with a real /activity endpoint
-// once the reporting API is live. Same local-mock pattern used elsewhere.
-const ALL_ACTIVITY: ActivityItem[] = [
-  { id: "1", kind: "voice", title: "Voice check — genuine", detail: "recording_08b.wav", tier: "safe", timestamp: "4 min ago" },
-  { id: "2", kind: "message", title: "Message check — flagged", detail: "\"Your account will be suspended, verify now…\"", tier: "high", timestamp: "22 min ago" },
-  { id: "3", kind: "voice", title: "Voice check — AI-generated", detail: "call_recording_014.mp3", tier: "high", timestamp: "1 hr ago" },
-  { id: "4", kind: "contact", title: "Contact verified", detail: "Voiceprint match — 96% confidence", tier: "safe", timestamp: "3 hr ago" },
-  { id: "5", kind: "message", title: "Message check — inconclusive", detail: "\"We tried reaching you, please call back…\"", tier: "medium", timestamp: "5 hr ago" },
-  { id: "6", kind: "voice", title: "Voice check — genuine", detail: "voiceprint_check.wav", tier: "safe", timestamp: "8 hr ago" },
-  { id: "7", kind: "contact", title: "Contact mismatch reported", detail: "Verification failed — flagged as possible impersonation", tier: "high", timestamp: "1 day ago" },
-  { id: "8", kind: "message", title: "Message check — genuine", detail: "\"Hey, are we still on for tomorrow?\"", tier: "safe", timestamp: "1 day ago" },
-];
+import { ApiError, fetchReports } from "../services/api";
+import { reportToActivityItem, type ActivityItem, type ActivityKind } from "../utils/activity";
+import type { RiskTier as ActivityTier } from "../components/VerdictCard";
 
 const KIND_ICON: Record<ActivityKind, typeof WaveIcon> = {
   voice: WaveIcon,
@@ -56,8 +34,21 @@ const FILTER_LABEL: Record<Filter, string> = {
 
 export function ActivityPage() {
   const [filter, setFilter] = useState<Filter>("all");
+  const [allActivity, setAllActivity] = useState<ActivityItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  const items = ALL_ACTIVITY.filter((item) => filter === "all" || item.kind === filter);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchReports(controller.signal)
+      .then((reports) => setAllActivity(reports.map(reportToActivityItem)))
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setError(err instanceof ApiError ? err.message : "Could not load activity.");
+      });
+    return () => controller.abort();
+  }, []);
+
+  const items = allActivity.filter((item) => filter === "all" || item.kind === filter);
 
   return (
     <div className="min-h-full bg-canvas px-4 py-8 sm:px-8">
@@ -85,7 +76,9 @@ export function ActivityPage() {
         </div>
 
         <div className="rounded-2xl border border-line bg-panel p-5">
-          {items.length === 0 ? (
+          {error ? (
+            <p className="py-8 text-center text-sm text-ink-faint">{error}</p>
+          ) : items.length === 0 ? (
             <p className="py-8 text-center text-sm text-ink-faint">
               No {FILTER_LABEL[filter].toLowerCase()} activity yet.
             </p>

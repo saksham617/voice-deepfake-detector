@@ -157,3 +157,38 @@ def test_create_report_rejects_invalid_values_with_400_not_500(client, payload):
     response = client.post("/report", json=payload)
     assert response.status_code == 400
     assert "detail" in response.json()
+
+
+def test_list_reports_for_number_returns_only_matching_reports(client):
+    number = "+1 202-555-0199"
+    other_number = "+1 202-555-0100"
+
+    matching_ids = []
+    for verdict in ("spoof", "bonafide"):
+        response = client.post(
+            "/report",
+            json={"type": "voice", "verdict": verdict, "confidence_score": 0.5, "phone_number": number},
+        )
+        assert response.status_code == 200
+        matching_ids.append(response.json()["id"])
+
+    client.post(
+        "/report",
+        json={"type": "voice", "verdict": "spoof", "confidence_score": 0.5, "phone_number": other_number},
+    )
+    client.post("/report", json={"type": "voice", "verdict": "spoof", "confidence_score": 0.5})
+
+    response = client.get(f"/reports/number/{number}")
+    assert response.status_code == 200
+    body = response.json()
+
+    assert {r["id"] for r in body} == set(matching_ids)
+    assert all(r["phone_number"] == number for r in body)
+    timestamps = [r["timestamp"] for r in body]
+    assert timestamps == sorted(timestamps, reverse=True)
+
+
+def test_list_reports_for_number_returns_empty_for_unknown_number(client):
+    response = client.get("/reports/number/+1 000-000-0000")
+    assert response.status_code == 200
+    assert response.json() == []

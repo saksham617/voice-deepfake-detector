@@ -1,84 +1,38 @@
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { AlertIcon, MessageIcon, PhoneIcon, WaveIcon } from "../components/icons";
-import { TIER_STYLES, type RiskTier } from "../components/VerdictCard";
+import { TIER_STYLES } from "../components/VerdictCard";
+import { ApiError, fetchReportsByPhoneNumber } from "../services/api";
+import { verdictToTier, type BackendReport } from "../types/report";
 
-type EventType = "voice" | "message" | "call";
-
-interface TimelineEvent {
-  id: string;
-  date: string; // ISO
-  type: EventType;
-  tier: RiskTier;
-  summary: string;
-  detail: string;
-}
-
-// TODO(remove-when-backend-ready): replace with a real GET
-// /reports/number/:phoneNumber (or similar) endpoint once it exists.
-// Deterministic mock, loosely seeded from the phone number so different
-// numbers show some variety in the demo.
-function buildTimeline(phoneNumber: string): TimelineEvent[] {
-  const seed = Array.from(phoneNumber).reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
-
-  return [
-    {
-      id: "e1",
-      date: "2026-09-10T08:15:00.000Z",
-      type: "message",
-      tier: "high",
-      summary: "Phishing SMS received",
-      detail: "\"Your account will be suspended, verify now…\" — flagged 92% phishing probability.",
-    },
-    {
-      id: "e2",
-      date: "2026-09-10T08:42:00.000Z",
-      type: "call",
-      tier: "high",
-      summary: "Inbound call, 6 min",
-      detail:
-        "Call placed 27 minutes after the phishing SMS — consistent with a coordinated vishing follow-up.",
-    },
-    {
-      id: "e3",
-      date: "2026-09-10T08:44:00.000Z",
-      type: "voice",
-      tier: seed % 2 === 0 ? "high" : "medium",
-      summary: "Voice check on recorded segment",
-      detail:
-        seed % 2 === 0
-          ? "AI-generated voice detected with 88% confidence."
-          : "Borderline confidence score; flagged for manual review.",
-    },
-    {
-      id: "e4",
-      date: "2026-09-12T14:05:00.000Z",
-      type: "message",
-      tier: "medium",
-      summary: "Follow-up SMS",
-      detail: "\"We tried reaching you, please call back…\" — moderate phishing signals.",
-    },
-    {
-      id: "e5",
-      date: "2026-09-14T19:30:00.000Z",
-      type: "call",
-      tier: "safe",
-      summary: "Inbound call, 2 min",
-      detail: "No suspicious voice signals detected on this call.",
-    },
-  ];
-}
+type EventType = BackendReport["type"];
 
 const TYPE_ICON: Record<EventType, typeof WaveIcon> = {
   voice: WaveIcon,
   message: MessageIcon,
-  call: PhoneIcon,
+  speaker_verification: PhoneIcon,
 };
 
 const TYPE_LABEL: Record<EventType, string> = {
   voice: "Voice check",
   message: "Message check",
-  call: "Call",
+  speaker_verification: "Contact check",
 };
+
+function summaryFor(report: BackendReport): string {
+  if (report.type === "voice") {
+    return report.verdict === "spoof" ? "AI-generated voice detected" : "Voice check — genuine";
+  }
+  if (report.type === "message") {
+    return report.verdict === "suspicious" ? "Phishing message flagged" : "Message check — genuine";
+  }
+  return report.verdict === "safe" ? "Contact verified" : "Contact mismatch reported";
+}
+
+function detailFor(report: BackendReport): string {
+  if (report.user_notes) return report.user_notes;
+  return `${Math.round(report.confidence_score * 100)}% confidence.`;
+}
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -92,8 +46,36 @@ function formatDateTime(iso: string): string {
 export function NumberTimelinePage() {
   const { phoneNumber = "" } = useParams<{ phoneNumber: string }>();
   const decoded = decodeURIComponent(phoneNumber);
-  const events = buildTimeline(decoded);
-  const highRiskCount = events.filter((e) => e.tier === "high").length;
+
+  const [reports, setReports] = useState<BackendReport[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!decoded) {
+      setLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+    fetchReportsByPhoneNumber(decoded, controller.signal)
+      .then((data) => {
+        setReports(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setError(err instanceof ApiError ? err.message : "Could not load this number's history.");
+        setLoading(false);
+      });
+    return () => controller.abort();
+  }, [decoded]);
+
+  // Oldest first, so the timeline below reads top-to-bottom as it happened
+  // (the backend returns newest-first, matching ReportsPage's list view).
+  const events = [...reports].reverse();
+  const highRiskCount = events.filter((r) => verdictToTier(r.verdict) === "high").length;
   const hasPattern = highRiskCount >= 2;
 
   return (
@@ -122,32 +104,40 @@ export function NumberTimelinePage() {
           </div>
         )}
 
-        <div className="relative space-y-4 pl-6">
-          <div className="absolute bottom-2 left-[11px] top-2 w-px bg-line" />
-          {events.map((event) => {
-            const Icon = TYPE_ICON[event.type];
-            const styles = TIER_STYLES[event.tier];
-            return (
-              <div key={event.id} className="relative">
-                <span
-                  className={`absolute -left-6 grid h-6 w-6 place-items-center rounded-full ${styles.chip} ${styles.text}`}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                </span>
-                <div className="rounded-2xl border border-line bg-panel p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs font-medium uppercase tracking-wider text-ink-faint">
-                      {TYPE_LABEL[event.type]}
-                    </span>
-                    <span className="text-xs text-ink-faint">{formatDateTime(event.date)}</span>
+        {loading ? (
+          <p className="py-8 text-center text-sm text-ink-faint">Loading history…</p>
+        ) : error ? (
+          <p className="py-8 text-center text-sm text-ink-faint">{error}</p>
+        ) : events.length === 0 ? (
+          <p className="py-8 text-center text-sm text-ink-faint">No activity recorded for this number yet.</p>
+        ) : (
+          <div className="relative space-y-4 pl-6">
+            <div className="absolute bottom-2 left-[11px] top-2 w-px bg-line" />
+            {events.map((report) => {
+              const Icon = TYPE_ICON[report.type];
+              const styles = TIER_STYLES[verdictToTier(report.verdict)];
+              return (
+                <div key={report.id} className="relative">
+                  <span
+                    className={`absolute -left-6 grid h-6 w-6 place-items-center rounded-full ${styles.chip} ${styles.text}`}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                  </span>
+                  <div className="rounded-2xl border border-line bg-panel p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-medium uppercase tracking-wider text-ink-faint">
+                        {TYPE_LABEL[report.type]}
+                      </span>
+                      <span className="text-xs text-ink-faint">{formatDateTime(report.timestamp)}</span>
+                    </div>
+                    <p className="mt-1.5 text-sm font-medium text-ink">{summaryFor(report)}</p>
+                    <p className="mt-1 text-xs text-ink-dim">{detailFor(report)}</p>
                   </div>
-                  <p className="mt-1.5 text-sm font-medium text-ink">{event.summary}</p>
-                  <p className="mt-1 text-xs text-ink-dim">{event.detail}</p>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

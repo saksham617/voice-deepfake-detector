@@ -7,7 +7,10 @@ rather than a stub.
 """
 
 import io
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -72,10 +75,35 @@ def test_predict_known_spoof_file(client, spoof_path):
 
 
 def test_predict_rejects_unsupported_extension(client):
+    # .txt, not .mp3: mp3/ogg/webm/m4a are all accepted now (transcoded via
+    # ffmpeg before decoding -- see backend/api/legacy.py TRANSCODE_EXTENSIONS),
+    # matching what the frontend's file picker and mic recorder actually send.
     fake_file = io.BytesIO(b"not real audio")
-    response = client.post("/predict", files={"file": ("test.mp3", fake_file, "audio/mpeg")})
+    response = client.post("/predict", files={"file": ("test.txt", fake_file, "text/plain")})
 
     assert response.status_code == 400
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_predict_transcodes_webm_upload(client, bonafide_path):
+    """A format libsndfile can't decode directly (see legacy.py
+    TRANSCODE_EXTENSIONS) should still reach the model, via the ffmpeg
+    transcode step -- not get rejected the way it was before that step
+    existed."""
+    with tempfile.NamedTemporaryFile(suffix=".webm") as webm_file:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", str(bonafide_path), webm_file.name],
+            check=True,
+            capture_output=True,
+        )
+        webm_file.seek(0)
+        response = client.post(
+            "/predict", files={"file": ("recording.webm", webm_file, "audio/webm")}
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["prediction"] in ("bonafide", "spoof")
 
 
 def test_predict_rejects_oversized_upload(client):

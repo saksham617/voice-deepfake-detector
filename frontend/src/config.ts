@@ -36,6 +36,9 @@ export const VERIFY_SPEAKER_PATH = "/verify_speaker";
 /** Reports list/delete endpoint path (unprefixed, matching legacy.py's app-root contract). */
 export const REPORTS_PATH = "/reports";
 
+/** Enrolled-contacts list endpoint path. */
+export const CONTACTS_PATH = "/contacts";
+
 /**
  * Audio formats the UI accepts. Kept in sync with what the backend supports.
  * Update this list when the backend's supported formats are confirmed.

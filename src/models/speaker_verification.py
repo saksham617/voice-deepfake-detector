@@ -14,6 +14,7 @@ DEFAULT_MATCH_THRESHOLD.
 
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import torch
@@ -104,6 +105,17 @@ def _embedding_path(name: str) -> Path:
     return ENROLLMENT_DIR / f"{_sanitize_name(name)}.pt"
 
 
+def contact_id_for_name(name: str) -> str:
+    """The stable, URL/form-safe id a contact is addressed by everywhere
+    outside this module (API responses, verify_speaker lookups). Derived
+    from the name rather than a separately-generated id/counter, since
+    enrollment is already one file per sanitized name -- see
+    _embedding_path. Re-sanitizing an id this function already produced is
+    a no-op, so callers may pass either a raw name or a prior contact_id.
+    """
+    return _sanitize_name(name)
+
+
 def _load_waveform(audio_path: str) -> torch.Tensor:
     model = _get_model()
     try:
@@ -136,17 +148,25 @@ def enroll_speaker(name: str, audio_path: str) -> dict:
     but a caller may want to ask for a longer sample).
     """
     embedding, duration_sec = compute_embedding(audio_path)
+    enrolled_at = datetime.now(timezone.utc).isoformat()
 
     ENROLLMENT_DIR.mkdir(parents=True, exist_ok=True)
     torch.save(
-        {"name": name, "embedding": embedding, "duration_sec": duration_sec},
+        {
+            "name": name,
+            "embedding": embedding,
+            "duration_sec": duration_sec,
+            "enrolled_at": enrolled_at,
+        },
         _embedding_path(name),
     )
 
     return {
         "name": name,
+        "contact_id": contact_id_for_name(name),
         "duration_sec": duration_sec,
         "short_clip": duration_sec < MIN_RELIABLE_DURATION_SEC,
+        "enrolled_at": enrolled_at,
     }
 
 
@@ -176,10 +196,42 @@ def verify_speaker(
         or stored["duration_sec"] < MIN_RELIABLE_DURATION_SEC
     )
 
+    is_match = similarity > threshold
     return {
-        "name": name,
+        "name": stored["name"],
+        "contact_id": contact_id_for_name(name),
         "similarity": similarity,
-        "is_match": similarity > threshold,
+        "is_match": is_match,
+        "match": is_match,
         "threshold": threshold,
         "short_clip": short_clip,
     }
+
+
+def list_enrolled_speakers() -> list[dict]:
+    """List every enrolled contact: contact_id, name, enrolled_at.
+
+    Reads back the per-contact .pt files written by enroll_speaker rather
+    than keeping a separate index, so there's exactly one source of truth
+    for "who's enrolled" -- can't drift out of sync with the embeddings
+    themselves. enrolled_at falls back to the file's mtime for enrollments
+    written before that field existed.
+    """
+    if not ENROLLMENT_DIR.exists():
+        return []
+
+    contacts = []
+    for path in sorted(ENROLLMENT_DIR.glob("*.pt")):
+        try:
+            stored = torch.load(path, map_location="cpu")
+        except Exception:
+            continue
+        enrolled_at = stored.get("enrolled_at")
+        if not enrolled_at:
+            enrolled_at = datetime.fromtimestamp(
+                path.stat().st_mtime, tz=timezone.utc
+            ).isoformat()
+        contacts.append(
+            {"contact_id": path.stem, "name": stored.get("name", path.stem), "enrolled_at": enrolled_at}
+        )
+    return contacts

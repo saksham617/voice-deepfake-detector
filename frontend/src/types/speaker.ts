@@ -14,6 +14,13 @@ export interface EnrollSpeakerResponse {
   name: string;
 }
 
+/** One row of GET /contacts. */
+export interface BackendContact {
+  contact_id: string;
+  name: string;
+  enrolled_at: string; // ISO 8601
+}
+
 export interface VerifySpeakerResponse {
   /** Whether the sample is judged to belong to the enrolled contact. */
   match: boolean;
@@ -42,4 +49,19 @@ export function isVerifySpeakerResponse(value: unknown): value is VerifySpeakerR
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   return typeof v.match === "boolean" && isProbability(v.similarity);
+}
+
+function isBackendContact(value: unknown): value is BackendContact {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.contact_id === "string" &&
+    typeof v.name === "string" &&
+    typeof v.enrolled_at === "string"
+  );
+}
+
+/** Type guard used to validate an untrusted backend/JSON response at runtime. */
+export function isBackendContactArray(value: unknown): value is BackendContact[] {
+  return Array.isArray(value) && value.every(isBackendContact);
 }

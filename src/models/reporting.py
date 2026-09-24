@@ -160,6 +160,18 @@ def list_reports() -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def list_reports_by_phone_number(phone_number: str) -> list[dict]:
+    """Return every report against one phone number, most recently created
+    first -- the per-number timeline shown on the Reports > Number page."""
+    ensure_db_ready()
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM reports WHERE phone_number = ? ORDER BY timestamp DESC, id DESC",
+            (phone_number,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def get_report(report_id: int) -> dict:
     """Return one report by id. Raises ReportNotFoundError if it doesn't exist."""
     ensure_db_ready()

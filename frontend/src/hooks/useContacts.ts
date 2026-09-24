@@ -2,14 +2,13 @@
  * useContacts — owns the enrolled-contacts list plus the enroll and verify
  * flows on the Contacts page. All API access goes through the api service.
  *
- * There's no "list contacts" endpoint yet, so the roster itself is kept in
- * local state, seeded with a couple of demo contacts (same pattern as
- * OverviewPage's RECENT_ACTIVITY) and appended to as new contacts are
- * enrolled during the session.
+ * The roster is loaded from GET /contacts on mount and appended to locally
+ * as new contacts are enrolled during the session (no need to refetch the
+ * whole list after every enroll).
  */
 
-import { useCallback, useRef, useState } from "react";
-import { ApiError, enrollSpeaker, verifySpeaker } from "../services/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiError, enrollSpeaker, fetchContacts, verifySpeaker } from "../services/api";
 
 export interface Contact {
   id: string;
@@ -17,13 +16,7 @@ export interface Contact {
   enrolledAt: string; // ISO timestamp
 }
 
-// TODO(remove-when-backend-ready): seed contacts locally until a
-// GET /contacts (or similar) endpoint exists.
-const INITIAL_CONTACTS: Contact[] = [
-  { id: "contact_seed_1", name: "Aditi Rao", enrolledAt: "2026-09-02T10:00:00.000Z" },
-  { id: "contact_seed_2", name: "Rahul Mehta", enrolledAt: "2026-09-08T14:30:00.000Z" },
-];
-
+export type ContactsLoadStatus = "loading" | "ready" | "error";
 export type EnrollStatus = "idle" | "enrolling" | "success" | "error";
 export type VerifyStatus = "idle" | "verifying" | "result" | "error";
 
@@ -33,7 +26,28 @@ export interface VerifyResult {
 }
 
 export function useContacts() {
-  const [contacts, setContacts] = useState<Contact[]>(INITIAL_CONTACTS);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [contactsLoadStatus, setContactsLoadStatus] = useState<ContactsLoadStatus>("loading");
+  const [contactsLoadError, setContactsLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchContacts(controller.signal)
+      .then((backendContacts) => {
+        setContacts(
+          backendContacts.map((c) => ({ id: c.contact_id, name: c.name, enrolledAt: c.enrolled_at })),
+        );
+        setContactsLoadStatus("ready");
+      })
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setContactsLoadError(
+          err instanceof ApiError ? err.message : "Could not load your contacts. Please try again.",
+        );
+        setContactsLoadStatus("error");
+      });
+    return () => controller.abort();
+  }, []);
 
   const [enrollStatus, setEnrollStatus] = useState<EnrollStatus>("idle");
   const [enrollError, setEnrollError] = useState<string | null>(null);
@@ -117,6 +131,8 @@ export function useContacts() {
 
   return {
     contacts,
+    contactsLoadStatus,
+    contactsLoadError,
     enrollStatus,
     enrollError,
     enroll,

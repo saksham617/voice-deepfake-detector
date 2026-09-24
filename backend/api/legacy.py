@@ -5,11 +5,13 @@ Exposes (all unprefixed, at the app root -- this is the contract the
 deployed React frontend depends on, per frontend/src/types/prediction.ts):
 
     POST   /predict          multipart "file" -> bonafide/spoof + confidence
+    GET    /contacts          list enrolled contacts (id, name, enrolled_at)
     POST   /enroll_speaker    multipart "name" + "file" -> enroll a voiceprint
-    POST   /verify_speaker    multipart "name" + "file" -> match against one
+    POST   /verify_speaker    multipart "contact_id" + "file" -> match against one
     POST   /check_message     json "text" -> safe/suspicious + confidence
     POST   /report            create a report
     GET    /reports           list reports
+    GET    /reports/number/{phone_number}   list reports against one number
     GET    /reports/{id}      fetch one report
     DELETE /reports/{id}      delete one report
     GET    /health            liveness + per-subsystem readiness
@@ -24,6 +26,8 @@ under /live-call -- see backend/api/rest.py and backend/api/websocket.py.
 """
 
 import logging
+import os
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -40,10 +44,17 @@ logger = logging.getLogger("backend")
 
 router = APIRouter()
 
-# Matches what the CNN was trained/evaluated on (audio_io.py reads via
-# soundfile, which natively supports WAV/FLAC). Other formats the frontend
-# accepts (mp3, ogg, webm, m4a) are not yet supported server-side.
-ALLOWED_EXTENSIONS = {".wav", ".flac"}
+# What the audio loader (librosa/soundfile) can decode natively, no
+# transcoding needed -- WAV always, FLAC and MP3 via libsndfile 1.1+.
+NATIVE_EXTENSIONS = {".wav", ".flac", ".mp3"}
+
+# Formats the frontend also offers (file picker + browser MediaRecorder
+# output) that libsndfile can't decode directly -- see
+# frontend/src/config.ts ACCEPTED_AUDIO_EXTENSIONS. Transcoded to WAV via
+# ffmpeg (_transcode_to_wav) before being handed to the loader.
+TRANSCODE_EXTENSIONS = {".ogg", ".webm", ".m4a", ".mp4"}
+
+ALLOWED_EXTENSIONS = NATIVE_EXTENSIONS | TRANSCODE_EXTENSIONS
 
 # Matches the frontend's client-side cap (frontend/src/config.ts
 # MAX_FILE_SIZE_BYTES); enforced again here since the client-side check is
@@ -70,17 +81,27 @@ class PredictionResponse(BaseModel):
 
 
 class EnrollSpeakerResponse(BaseModel):
+    contact_id: str
     name: str
     duration_sec: float
     short_clip: bool
+    enrolled_at: str
 
 
 class VerifySpeakerResponse(BaseModel):
+    contact_id: str
     name: str
+    match: bool
     similarity: float
     is_match: bool
     threshold: float
     short_clip: bool
+
+
+class ContactResponse(BaseModel):
+    contact_id: str
+    name: str
+    enrolled_at: str
 
 
 class CheckMessageRequest(BaseModel):
@@ -177,11 +198,45 @@ def _save_upload_to_tempfile(file: UploadFile, suffix: str) -> str:
     return tmp_path
 
 
-# Note: a plain `def` route (not `async def`) so FastAPI/Starlette runs it in
-# its worker thread pool automatically, instead of blocking the single event
-# loop on the CPU-bound CNN inference inside predict_audio().
-@router.post("/predict", response_model=PredictionResponse)
-def predict(file: UploadFile = File(...)) -> PredictionResponse:
+class TranscodeError(Exception):
+    """The upload couldn't be converted to WAV -- corrupt/truncated input,
+    not a server misconfiguration (see _transcode_to_wav)."""
+
+
+def _transcode_to_wav(src_path: str) -> str:
+    """Convert an upload in a non-natively-supported format (see
+    TRANSCODE_EXTENSIONS) to a 16 kHz mono WAV via ffmpeg, so the rest of
+    the pipeline never has to care what format the browser sent.
+
+    Raises TranscodeError for bad/corrupt input (mapped to the same 400 as
+    a native-format decode failure); lets FileNotFoundError propagate
+    uncaught if the ffmpeg binary itself is missing, since that's a server
+    deployment problem, not a bad upload.
+    """
+    fd, wav_path = tempfile.mkstemp(suffix=".wav")
+    os.close(fd)
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", src_path, "-ar", "16000", "-ac", "1", wav_path],
+            check=True,
+            capture_output=True,
+            timeout=60,
+        )
+    except subprocess.CalledProcessError as exc:
+        Path(wav_path).unlink(missing_ok=True)
+        raise TranscodeError(exc.stderr.decode("utf-8", errors="replace")) from exc
+    except subprocess.TimeoutExpired as exc:
+        Path(wav_path).unlink(missing_ok=True)
+        raise TranscodeError("transcoding timed out") from exc
+    return wav_path
+
+
+def _receive_audio_upload(file: UploadFile) -> str:
+    """Validate, save, and (if needed) transcode an uploaded audio file.
+
+    Returns a single path the audio loader can read natively -- the caller
+    only ever has one file to clean up, regardless of whether a transcode
+    happened."""
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -190,6 +245,23 @@ def predict(file: UploadFile = File(...)) -> PredictionResponse:
         )
 
     tmp_path = _save_upload_to_tempfile(file, suffix)
+    if suffix not in TRANSCODE_EXTENSIONS:
+        return tmp_path
+
+    try:
+        return _transcode_to_wav(tmp_path)
+    except TranscodeError:
+        raise HTTPException(status_code=400, detail=CORRUPT_AUDIO_ERROR_DETAIL) from None
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+# Note: a plain `def` route (not `async def`) so FastAPI/Starlette runs it in
+# its worker thread pool automatically, instead of blocking the single event
+# loop on the CPU-bound CNN inference inside predict_audio().
+@router.post("/predict", response_model=PredictionResponse)
+def predict(file: UploadFile = File(...)) -> PredictionResponse:
+    tmp_path = _receive_audio_upload(file)
 
     try:
         result = predict_audio(tmp_path)
@@ -210,20 +282,19 @@ def predict(file: UploadFile = File(...)) -> PredictionResponse:
     )
 
 
+@router.get("/contacts", response_model=list[ContactResponse])
+def list_contacts(request: Request) -> list[ContactResponse]:
+    _require_speaker_model_ready(request)
+    return [ContactResponse(**c) for c in sv.list_enrolled_speakers()]
+
+
 @router.post("/enroll_speaker", response_model=EnrollSpeakerResponse)
 def enroll_speaker(
     request: Request, name: str = Form(...), file: UploadFile = File(...)
 ) -> EnrollSpeakerResponse:
     _require_speaker_model_ready(request)
 
-    suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type '{suffix}'. Supported: {sorted(ALLOWED_EXTENSIONS)}",
-        )
-
-    tmp_path = _save_upload_to_tempfile(file, suffix)
+    tmp_path = _receive_audio_upload(file)
     try:
         result = sv.enroll_speaker(name, tmp_path)
     except ValueError as exc:
@@ -239,22 +310,20 @@ def enroll_speaker(
     return EnrollSpeakerResponse(**result)
 
 
+# Note: the form field is "contact_id" (not "name") to match the frontend's
+# contract (frontend/src/services/api.ts realVerifySpeaker) -- a contact_id
+# is just the sanitized-name slug enroll_speaker already keys storage by
+# (see sv.contact_id_for_name), so passing it straight through to
+# sv.verify_speaker as the lookup key works unchanged.
 @router.post("/verify_speaker", response_model=VerifySpeakerResponse)
 def verify_speaker(
-    request: Request, name: str = Form(...), file: UploadFile = File(...)
+    request: Request, contact_id: str = Form(...), file: UploadFile = File(...)
 ) -> VerifySpeakerResponse:
     _require_speaker_model_ready(request)
 
-    suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type '{suffix}'. Supported: {sorted(ALLOWED_EXTENSIONS)}",
-        )
-
-    tmp_path = _save_upload_to_tempfile(file, suffix)
+    tmp_path = _receive_audio_upload(file)
     try:
-        result = sv.verify_speaker(name, tmp_path)
+        result = sv.verify_speaker(contact_id, tmp_path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     except sv.SpeakerNotEnrolledError as exc:
@@ -262,7 +331,9 @@ def verify_speaker(
     except sv.AudioDecodeError:
         raise HTTPException(status_code=400, detail=CORRUPT_AUDIO_ERROR_DETAIL) from None
     except Exception:
-        logger.exception("speaker verification failed for name=%r file=%r", name, file.filename)
+        logger.exception(
+            "speaker verification failed for contact_id=%r file=%r", contact_id, file.filename
+        )
         raise HTTPException(status_code=500, detail=GENERIC_SPEAKER_ERROR_DETAIL) from None
     finally:
         Path(tmp_path).unlink(missing_ok=True)
@@ -312,6 +383,21 @@ def list_reports() -> list[ReportResponse]:
         results = reporting.list_reports()
     except Exception:
         logger.exception("listing reports failed")
+        raise HTTPException(status_code=500, detail=GENERIC_REPORT_ERROR_DETAIL) from None
+
+    return [ReportResponse(**r) for r in results]
+
+
+# Registered before /reports/{report_id} so FastAPI's literal "number"
+# segment isn't swallowed by that route's {report_id}: int converter --
+# it wouldn't match a phone number anyway, but keeping this first is the
+# same defensive ordering FastAPI's own docs recommend for path vs literal.
+@router.get("/reports/number/{phone_number}", response_model=list[ReportResponse])
+def list_reports_for_number(phone_number: str) -> list[ReportResponse]:
+    try:
+        results = reporting.list_reports_by_phone_number(phone_number)
+    except Exception:
+        logger.exception("listing reports for phone_number=%r failed", phone_number)
         raise HTTPException(status_code=500, detail=GENERIC_REPORT_ERROR_DETAIL) from None
 
     return [ReportResponse(**r) for r in results]

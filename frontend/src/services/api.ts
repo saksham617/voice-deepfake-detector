@@ -10,6 +10,7 @@
 
 import {
   API_BASE_URL,
+  CONTACTS_PATH,
   ENROLL_SPEAKER_PATH,
   MESSAGE_CHECK_PATH,
   PREDICT_PATH,
@@ -30,8 +31,10 @@ import {
   type PredictionResponse,
 } from "../types/prediction";
 import {
+  isBackendContactArray,
   isEnrollSpeakerResponse,
   isVerifySpeakerResponse,
+  type BackendContact,
   type EnrollSpeakerResponse,
   type VerifySpeakerResponse,
 } from "../types/speaker";
@@ -374,6 +377,78 @@ async function realDeleteReport(id: number, signal?: AbortSignal): Promise<void>
   }
 }
 
+/** Fetch every report against one phone number (GET /reports/number/{phoneNumber}), most-recent first. */
+export async function fetchReportsByPhoneNumber(
+  phoneNumber: string,
+  signal?: AbortSignal,
+): Promise<BackendReport[]> {
+  if (USE_MOCK) return mockFetchReportsByPhoneNumber(phoneNumber, signal);
+  return realFetchReportsByPhoneNumber(phoneNumber, signal);
+}
+
+async function realFetchReportsByPhoneNumber(
+  phoneNumber: string,
+  signal?: AbortSignal,
+): Promise<BackendReport[]> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_BASE_URL}${REPORTS_PATH}/number/${encodeURIComponent(phoneNumber)}`,
+      { signal },
+    );
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new ApiError("network", "Could not reach the server to load this number's history.");
+  }
+  if (!response.ok) {
+    throw new ApiError(
+      "server",
+      `The server returned an error loading this number's history (${response.status}).`,
+    );
+  }
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    throw new ApiError("invalid_response", "The server sent a response we couldn't read.");
+  }
+  if (!isBackendReportArray(data)) {
+    throw new ApiError("invalid_response", "The server sent reports in an unexpected shape.");
+  }
+  return data;
+}
+
+// --------------------------------------------------------------------------- contacts
+
+/** List every enrolled contact (GET /contacts). */
+export async function fetchContacts(signal?: AbortSignal): Promise<BackendContact[]> {
+  if (USE_MOCK) return mockFetchContacts(signal);
+  return realFetchContacts(signal);
+}
+
+async function realFetchContacts(signal?: AbortSignal): Promise<BackendContact[]> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${CONTACTS_PATH}`, { signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new ApiError("network", "Could not reach the server to load contacts.");
+  }
+  if (!response.ok) {
+    throw new ApiError("server", `The server returned an error loading contacts (${response.status}).`);
+  }
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    throw new ApiError("invalid_response", "The server sent a response we couldn't read.");
+  }
+  if (!isBackendContactArray(data)) {
+    throw new ApiError("invalid_response", "The server sent contacts in an unexpected shape.");
+  }
+  return data;
+}
+
 // ---------------------------------------------------------------------------
 // Mock backend (development only)
 //
@@ -463,6 +538,11 @@ async function mockEnrollSpeaker(
   const seed = file.size + file.name.length + name.length;
   const contact_id = `contact_${Date.now()}_${seed.toString(36)}`;
 
+  mockContactsStore = [
+    ...mockContactsStore,
+    { contact_id, name, enrolled_at: new Date().toISOString() },
+  ];
+
   return { contact_id, name };
 }
 
@@ -509,6 +589,27 @@ let mockReportsStore: BackendReport[] = [
 async function mockFetchReports(signal?: AbortSignal): Promise<BackendReport[]> {
   await delay(500, signal);
   return mockReportsStore.slice();
+}
+
+async function mockFetchReportsByPhoneNumber(
+  phoneNumber: string,
+  signal?: AbortSignal,
+): Promise<BackendReport[]> {
+  await delay(500, signal);
+  return mockReportsStore.filter((r) => r.phone_number === phoneNumber);
+}
+
+// TODO(remove-when-backend-ready): sample contacts for USE_MOCK mode, seeded the same as the
+// real backend's demo state would be. A module-level array so mock enrollments persist within
+// a session (until reload), mirroring mockReportsStore above.
+let mockContactsStore: BackendContact[] = [
+  { contact_id: "aditi_rao", name: "Aditi Rao", enrolled_at: "2026-09-02T10:00:00.000Z" },
+  { contact_id: "rahul_mehta", name: "Rahul Mehta", enrolled_at: "2026-09-08T14:30:00.000Z" },
+];
+
+async function mockFetchContacts(signal?: AbortSignal): Promise<BackendContact[]> {
+  await delay(400, signal);
+  return mockContactsStore.slice();
 }
 
 async function mockDeleteReport(id: number, signal?: AbortSignal): Promise<void> {

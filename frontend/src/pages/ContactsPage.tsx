@@ -219,7 +219,11 @@ export function ContactsPage() {
 
                 <div className="rounded-2xl border border-line bg-panel p-5">
                   <h3 className="mb-4 text-sm font-semibold text-ink">Enrolled contacts</h3>
-                  {contacts.contacts.length === 0 ? (
+                  {contacts.contactsLoadStatus === "loading" ? (
+                    <p className="text-sm text-ink-faint">Loading contacts…</p>
+                  ) : contacts.contactsLoadStatus === "error" ? (
+                    <p className="text-sm text-ink-faint">{contacts.contactsLoadError}</p>
+                  ) : contacts.contacts.length === 0 ? (
                     <p className="text-sm text-ink-faint">No contacts enrolled yet.</p>
                   ) : (
                     <ul className="space-y-2">

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ContactsIcon,
@@ -7,6 +8,10 @@ import {
   WaveIcon,
 } from "../components/icons";
 import { MODEL_NAME } from "../config";
+import { ApiError, fetchReports } from "../services/api";
+import { reportToActivityItem, type ActivityItem } from "../utils/activity";
+
+const RECENT_ACTIVITY_LIMIT = 4;
 
 interface QuickAction {
   to: string;
@@ -60,56 +65,27 @@ function StatCard({ label, value, hint }: StatCardProps) {
   );
 }
 
-type ActivityTier = "safe" | "high";
-
-interface ActivityItem {
-  id: string;
-  title: string;
-  detail: string;
-  tier: ActivityTier;
-  timestamp: string;
-}
-
-// TODO(remove-when-backend-ready): replace with a real /activity (or similar)
-// endpoint once the reporting API is live. Kept local to this page for now,
-// same pattern as api.ts's mockPredict.
-const RECENT_ACTIVITY: ActivityItem[] = [
-  {
-    id: "1",
-    title: "Voice check — genuine",
-    detail: "recording_08b.wav",
-    tier: "safe",
-    timestamp: "4 min ago",
-  },
-  {
-    id: "2",
-    title: "Message check — flagged",
-    detail: "\"Your account will be suspended, verify now…\"",
-    tier: "high",
-    timestamp: "22 min ago",
-  },
-  {
-    id: "3",
-    title: "Voice check — AI-generated",
-    detail: "call_recording_014.mp3",
-    tier: "high",
-    timestamp: "1 hr ago",
-  },
-  {
-    id: "4",
-    title: "Contact verified",
-    detail: "Voiceprint match — 96% confidence",
-    tier: "safe",
-    timestamp: "3 hr ago",
-  },
-];
-
-const TIER_DOT: Record<ActivityTier, string> = {
+const TIER_DOT = {
   safe: "bg-safe",
+  medium: "bg-medium",
   high: "bg-high",
-};
+} as const;
 
 export function OverviewPage() {
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [activityError, setActivityError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchReports(controller.signal)
+      .then((reports) => setActivity(reports.slice(0, RECENT_ACTIVITY_LIMIT).map(reportToActivityItem)))
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setActivityError(err instanceof ApiError ? err.message : "Could not load recent activity.");
+      });
+    return () => controller.abort();
+  }, []);
+
   return (
     <div className="min-h-full bg-canvas px-4 py-8 sm:px-8">
       <div className="mx-auto max-w-5xl">
@@ -149,23 +125,29 @@ export function OverviewPage() {
           {/* Recent activity */}
           <section className="rounded-2xl border border-line bg-panel p-5">
             <h3 className="mb-4 text-sm font-semibold text-ink">Recent activity</h3>
-            <ul className="space-y-3">
-              {RECENT_ACTIVITY.map((item) => (
-                <li
-                  key={item.id}
-                  className="flex items-start gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
-                >
-                  <span
-                    className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${TIER_DOT[item.tier]}`}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-ink">{item.title}</p>
-                    <p className="truncate text-xs text-ink-dim">{item.detail}</p>
-                  </div>
-                  <span className="shrink-0 text-xs text-ink-faint">{item.timestamp}</span>
-                </li>
-              ))}
-            </ul>
+            {activityError ? (
+              <p className="py-4 text-center text-sm text-ink-faint">{activityError}</p>
+            ) : activity.length === 0 ? (
+              <p className="py-4 text-center text-sm text-ink-faint">No activity yet.</p>
+            ) : (
+              <ul className="space-y-3">
+                {activity.map((item) => (
+                  <li
+                    key={item.id}
+                    className="flex items-start gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
+                  >
+                    <span
+                      className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${TIER_DOT[item.tier]}`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-ink">{item.title}</p>
+                      <p className="truncate text-xs text-ink-dim">{item.detail}</p>
+                    </div>
+                    <span className="shrink-0 text-xs text-ink-faint">{item.timestamp}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           {/* System status */}
