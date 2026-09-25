@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VoiceGuard</string>
+    <string name="request_role_button">Set as Call Screening App</string>
+    <string name="status_held">Call screening role: GRANTED</string>
+    <string name="status_not_held">Call screening role: NOT granted</string>
+    <string name="status_unsupported">Call screening requires Android 10+</string>
+    <string name="request_overlay_button">Grant Overlay Permission</string>
+    <string name="status_overlay_granted">Overlay permission: GRANTED</string>
+    <string name="status_overlay_not_granted">Overlay permission: NOT granted</string>
+    <string name="overlay_incoming_call_label">Incoming Call</string>
+    <string name="overlay_dismiss_symbol">×</string>
+    <string name="request_audio_button">Grant Phone-State &amp; Mic Permissions</string>
+    <string name="status_audio_granted">Phone-state/mic permissions: GRANTED</string>
+    <string name="status_audio_not_granted">Phone-state/mic permissions: NOT granted</string>
+    <string name="request_shizuku_button">Request Shizuku Access</string>
+    <string name="status_shizuku_granted">Shizuku access: GRANTED</string>
+    <string name="status_shizuku_not_granted">Shizuku running, access: NOT granted</string>
+    <string name="status_shizuku_not_running">Shizuku: NOT running (set up Wireless debugging + Shizuku app first)</string>
+    <string name="overlay_risk_waiting">Analyzing…</string>
+    <string name="overlay_risk_format">Risk: %1$s (%2$d%%)</string>
+    <string name="overlay_risk_alert">⚠ HIGH RISK (%1$d%%)</string>
+    <string name="request_notification_button">Grant Notification Permission</string>
+    <string name="status_notifications_granted">Notification permission: GRANTED</string>
+    <string name="status_notifications_not_granted">Notification permission: NOT granted</string>
+</resources>
