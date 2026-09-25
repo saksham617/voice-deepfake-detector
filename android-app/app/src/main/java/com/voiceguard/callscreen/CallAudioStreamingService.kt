@@ -45,7 +45,11 @@ class CallAudioStreamingService : Service() {
         private const val TAG = "VoiceGuardAudio"
         const val EXTRA_NUMBER = "extra_number"
 
-        private const val BACKEND_WS_URL = "ws://192.168.0.190:8000/ws/stream"
+        // Path must be under /live-call -- that's the prefix backend/main.py mounts the
+        // streaming websocket router at (app.include_router(ws_router, prefix="/live-call")),
+        // not at the app root. The host:port is your backend machine's LAN IP; update it to
+        // match whatever network the phone and backend are actually both on.
+        private const val BACKEND_WS_URL = "ws://192.168.0.190:8000/live-call/ws/stream"
         private const val SAMPLE_RATE = 16000
         private const val READ_CHUNK_BYTES = 6400 // 200ms at 16kHz mono 16-bit
 
